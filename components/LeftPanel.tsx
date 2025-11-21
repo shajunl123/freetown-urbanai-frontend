@@ -12,21 +12,58 @@ export const LeftPanel: React.FC = () => {
   };
 
   const [docs, setDocs] = useState<UploadedDoc[]>([
-    { id: '1', name: 'Freetown_Structure_Plan_2028.pdf', type: 'PDF', size: '4.2 MB', progress: 100 },
+    { id: '1', name: 'Freetown_Air_Quality_Project.pdf', type: 'PDF', size: '4.2 MB', progress: 100 },
     { id: '2', name: 'Zoning_Ward_402.dwg', type: 'DWG', size: '12 MB', progress: 100 },
   ]);
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Handle actual file upload simulation
+  const handleFileUpload = (file: File) => {
+    const newDoc: UploadedDoc = {
+      id: Date.now().toString(),
+      name: file.name,
+      type: file.name.split('.').pop()?.toUpperCase() || 'FILE',
+      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      progress: 0
+    };
+
+    // Replace the list: new file + old first file
+    setDocs(prev => [newDoc, prev[0]].slice(0, 2));
+
+    // Simulate upload progress
+    const interval = setInterval(() => {
+      setDocs(prev => prev.map(doc => 
+        doc.id === newDoc.id 
+          ? { ...doc, progress: Math.min(100, doc.progress + 10) } 
+          : doc
+      ));
+    }, 100);
+
+    // Finish after 3 seconds
+    setTimeout(() => clearInterval(interval), 3000);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    // Visual simulation of drop
-    const newDoc: UploadedDoc = {
-        id: Date.now().toString(),
-        name: 'New_Policy_Draft_v2.docx',
-        type: 'DOCX',
-        size: '1.1 MB',
-        progress: 100
-    };
-    setDocs(prev => [newDoc, ...prev]);
+    setIsDragging(false);
+
+    Array.from(e.dataTransfer.files).forEach(file => {
+      if (['pdf', 'dwg', 'dxf', 'csv', 'txt'].includes(file.name.split('.').pop()?.toLowerCase() || '')) {
+        handleFileUpload(file);
+      }
+    });
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      Array.from(files).forEach(file => {
+        if (['pdf', 'dwg', 'dxf', 'csv', 'txt'].includes(file.name.split('.').pop()?.toLowerCase() || '')) {
+          handleFileUpload(file);
+        }
+      });
+    }
   };
 
   return (
@@ -61,7 +98,11 @@ export const LeftPanel: React.FC = () => {
       {/* Document Upload Zone */}
       <div 
         className="flex-1 glass-panel rounded-xl p-4 flex flex-col backdrop-blur-sm"
-        onDragOver={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
       >
         <div className="flex justify-between items-center mb-4">
@@ -69,33 +110,51 @@ export const LeftPanel: React.FC = () => {
         </div>
 
         {/* Drop Area */}
-        <div className="border-2 border-dashed border-white/10 rounded-lg p-6 text-center hover:border-freetown-blue/50 hover:bg-freetown-blue/5 transition-all cursor-pointer mb-4 group bg-black/5">
+        <div 
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer mb-4 group bg-black/5 ${
+            isDragging 
+              ? 'border-freetown-blue/50 bg-freetown-blue/10' 
+              : 'border-white/10 hover:border-freetown-blue/50 hover:bg-freetown-blue/5'
+          }`}
+        >
+          <input 
+            type="file" 
+            multiple 
+            className="hidden" 
+            id="file-upload" 
+            onChange={handleFileSelect}
+            accept=".pdf,.dwg,.dxf,.csv,.txt,.json,.shp"
+          />
+          <label htmlFor="file-upload">
             <svg className="w-8 h-8 text-gray-500 mx-auto mb-2 group-hover:text-freetown-blue transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <p className="text-xs text-gray-400">Drag Technical Docs</p>
             <p className="text-[9px] text-gray-600 mt-1">PDF, DWG, CSV, SHP</p>
+          </label>
         </div>
 
-        {/* File List */}
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-            {docs.map(doc => (
-                <div key={doc.id} className="bg-black/5 p-2 rounded border border-white/5 flex items-center gap-3 group hover:border-white/20 transition-colors cursor-pointer hover:bg-black/10">
-                    <div className="w-8 h-8 rounded bg-freetown-blue/10 flex items-center justify-center text-[10px] text-freetown-blue font-bold">
-                        {doc.type}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs text-gray-300 truncate group-hover:text-white shadow-black">{doc.name}</p>
-                        <p className="text-[10px] text-gray-600">{doc.size} • Synced</p>
-                    </div>
-                    <div className="w-1.5 h-1.5 rounded-full bg-freetown-green"></div>
-                </div>
-            ))}
+        {/* File List - Fixed 2 Items */}
+        <div className="flex-1 flex flex-col justify-between space-y-2">
+          {docs.slice(0, 2).map(doc => (
+            <div key={doc.id} className="bg-black/5 p-2 rounded border border-white/5 flex items-center gap-3 group hover:border-white/20 transition-colors cursor-pointer hover:bg-black/10">
+              <div className="w-8 h-8 rounded bg-freetown-blue/10 flex items-center justify-center text-[10px] text-freetown-blue font-bold">
+                {doc.type}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-300 truncate group-hover:text-white shadow-black">{doc.name}</p>
+                <p className="text-[10px] text-gray-600">{doc.size} • Synced</p>
+              </div>
+              <div className={`w-1.5 h-1.5 rounded-full ${doc.progress === 100 ? 'bg-freetown-green' : 'bg-freetown-blue'}`}></div>
+            </div>
+          ))}
         </div>
 
         <div className="mt-4 pt-3 border-t border-white/10">
              <button className="w-full py-2 bg-white/5 hover:bg-white/10 rounded text-xs text-gray-300 transition-colors flex items-center justify-center gap-2">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                </svg>
                 Manage Notion Database
              </button>
         </div>

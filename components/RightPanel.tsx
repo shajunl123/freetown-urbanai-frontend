@@ -51,7 +51,9 @@ export const RightPanel: React.FC = () => {
                     </div>
                     <div>
                         <h4 className="text-sm text-gray-200 font-medium leading-tight group-hover:text-white shadow-black">{member.name}</h4>
-                        <span className="text-[10px] text-gray-500 uppercase tracking-wide group-hover:text-freetown-blue transition-colors">{member.role}</span>
+                        <span className="text-[10px] text-gray-300 uppercase tracking-wide group-hover:text-freetown-blue transition-colors">
+                          {member.role}
+                        </span>
                     </div>
                 </div>
             ))}
@@ -60,7 +62,10 @@ export const RightPanel: React.FC = () => {
         {/* Quick Actions */}
         <div className="mt-auto pt-4 border-t border-white/10 space-y-2">
             <button className="w-full py-2 bg-freetown-blue/10 hover:bg-freetown-blue/20 text-freetown-blue border border-freetown-blue/20 rounded text-xs transition-colors flex items-center justify-center gap-2 group">
-                 <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                 <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                 </svg>
                 Schedule Site Inspection
             </button>
             <button className="w-full py-2 bg-transparent hover:bg-white/5 text-gray-400 border border-white/10 rounded text-xs transition-colors">
