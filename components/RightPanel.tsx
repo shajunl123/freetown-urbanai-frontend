@@ -69,7 +69,7 @@ export const RightPanel: React.FC = () => {
                 Schedule Site Inspection
             </button>
             <button className="w-full py-2 bg-transparent hover:bg-white/5 text-gray-400 border border-white/10 rounded text-xs transition-colors">
-                Generate Monthly Report
+                Additional Requests
             </button>
         </div>
       </div>

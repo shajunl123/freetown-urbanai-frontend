@@ -52,4 +52,5 @@ export interface UploadedDoc {
   type: string;
   size: string;
   progress: number;
+  status?: 'uploading' | 'done' | 'failed';
 }

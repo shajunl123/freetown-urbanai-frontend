@@ -1,6 +1,25 @@
 import React, { useState } from 'react';
 import { WeatherData, UploadedDoc } from '../types';
 
+const N8N_UPLOAD_URL = "https://fcc-tool.app.n8n.cloud/form/82848bc4-5ea2-4e5a-8bb6-3c09b94a8c5d";
+const ALLOWED_EXTS = ['pdf', 'dwg', 'dxf', 'csv', 'txt', 'json', 'shp'];
+
+async function uploadToN8n(file: File): Promise<void> {
+  const formData = new FormData();
+  // Most n8n form triggers use "file" as the field name
+  formData.append('file', file);
+
+  const res = await fetch(N8N_UPLOAD_URL, {
+    method: 'POST',
+    body: formData
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Upload failed (${res.status})`);
+  }
+}
+
 export const LeftPanel: React.FC = () => {
   // Mock Live Data
   const weather: WeatherData = {
@@ -18,30 +37,36 @@ export const LeftPanel: React.FC = () => {
 
   const [isDragging, setIsDragging] = useState(false);
 
-  // Handle actual file upload simulation
+  // Handle actual file upload to n8n + UI state
   const handleFileUpload = (file: File) => {
     const newDoc: UploadedDoc = {
       id: Date.now().toString(),
       name: file.name,
       type: file.name.split('.').pop()?.toUpperCase() || 'FILE',
       size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      progress: 0
+      progress: 5,
+      status: 'uploading'
     };
 
-    // Replace the list: new file + old first file
-    setDocs(prev => [newDoc, prev[0]].slice(0, 2));
+    // Add to the top of the list (keep at most 2 items)
+    setDocs(prev => [newDoc, ...prev].slice(0, 2));
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setDocs(prev => prev.map(doc => 
-        doc.id === newDoc.id 
-          ? { ...doc, progress: Math.min(100, doc.progress + 10) } 
-          : doc
-      ));
-    }, 100);
-
-    // Finish after 3 seconds
-    setTimeout(() => clearInterval(interval), 3000);
+    uploadToN8n(file)
+      .then(() => {
+        setDocs(prev => prev.map(doc =>
+          doc.id === newDoc.id
+            ? { ...doc, progress: 100, status: 'done' }
+            : doc
+        ));
+      })
+      .catch((err) => {
+        console.error("Upload to n8n failed:", err);
+        setDocs(prev => prev.map(doc =>
+          doc.id === newDoc.id
+            ? { ...doc, progress: 0, status: 'failed', name: `${file.name} (failed)` }
+            : doc
+        ));
+      });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -49,7 +74,8 @@ export const LeftPanel: React.FC = () => {
     setIsDragging(false);
 
     Array.from(e.dataTransfer.files).forEach(file => {
-      if (['pdf', 'dwg', 'dxf', 'csv', 'txt'].includes(file.name.split('.').pop()?.toLowerCase() || '')) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (ALLOWED_EXTS.includes(ext)) {
         handleFileUpload(file);
       }
     });
@@ -59,7 +85,8 @@ export const LeftPanel: React.FC = () => {
     const files = e.target.files;
     if (files) {
       Array.from(files).forEach(file => {
-        if (['pdf', 'dwg', 'dxf', 'csv', 'txt'].includes(file.name.split('.').pop()?.toLowerCase() || '')) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        if (ALLOWED_EXTS.includes(ext)) {
           handleFileUpload(file);
         }
       });
@@ -143,9 +170,21 @@ export const LeftPanel: React.FC = () => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-gray-300 truncate group-hover:text-white shadow-black">{doc.name}</p>
-                <p className="text-[10px] text-gray-600">{doc.size} • Synced</p>
+                <p className="text-[10px] text-gray-600">
+                  {doc.status === 'failed'
+                    ? 'Upload failed'
+                    : doc.status === 'uploading'
+                      ? 'Uploading...'
+                      : `${doc.size} • Synced`}
+                </p>
               </div>
-              <div className={`w-1.5 h-1.5 rounded-full ${doc.progress === 100 ? 'bg-freetown-green' : 'bg-freetown-blue'}`}></div>
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                doc.status === 'failed'
+                  ? 'bg-red-500'
+                  : doc.progress === 100
+                    ? 'bg-freetown-green'
+                    : 'bg-freetown-blue'
+              }`}></div>
             </div>
           ))}
         </div>

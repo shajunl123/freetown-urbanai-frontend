@@ -1,32 +1,46 @@
 // ./services/geminiService.ts
-
+// NOTE: This now targets the public n8n webhook that handles chat replies.
 export async function queryFlowise(prompt: string): Promise<string> {
   try {
+    // n8n embedded chat "made publicly available" typically accepts a single object.
+    // Include common fields (chatInput + sessionId + action) to satisfy the trigger.
+    const payload = {
+      sessionId: crypto.randomUUID(),
+      action: "sendMessage",
+      chatInput: prompt,
+    };
+
     const res = await fetch(
-      "https://vivacious-forgiveness-production-fe57.up.railway.app/api/v1/prediction/e6e89a4e-0515-44bf-bfc6-48de3ed638bc",
+      "https://fcc-tool.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: prompt })
+        body: JSON.stringify(payload),
       }
     );
 
-    if (!res.ok) throw new Error("Flowise request failed");
+    if (!res.ok) {
+      // surface backend error text to the UI
+      const errorText = await res.text().catch(() => "");
+      throw new Error(errorText || `n8n request failed (${res.status})`);
+    }
 
     const data = await res.json();
 
-    // 🔥 UNIFIED FIX: support *all* Flowise response formats
+    // Support common reply shapes from n8n or prior Flowise responses
     const unified =
       data.answer ||
       data.text ||
       data.response ||
       data.output ||
       data.result ||
+      data.message ||
       (typeof data === "string" ? data : null);
 
-    return unified || "No response from Flowise";
+    return unified || "No response from n8n";
   } catch (err) {
-    console.error("Flowise error:", err);
-    return "Error connecting to Flowise";
+    console.error("n8n chat error:", err);
+    if (err instanceof Error) return err.message;
+    return "Error connecting to the chatbot service";
   }
 }

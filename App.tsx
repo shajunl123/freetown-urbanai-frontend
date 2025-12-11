@@ -12,11 +12,12 @@ const App: React.FC = () => {
     {
       id: 'intro',
       role: Role.MODEL,
-      text: "Kushe! I am the FCC Urban Planning Assistant. I can analyze technical documents, cross-reference \"Freetown the Treetown\" initiatives, and retrieve live environmental data. How may I assist the policy team today?",
+      text: "Hi! I am the FCC Urban Planning AI Assistant. How may I assist the policy team today?",
       groundingChunks: []
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // --- IDLE DETECTION FOR PARTICLES ---
@@ -80,8 +81,11 @@ const App: React.FC = () => {
     }]);
 
     try {
+      const startedAt = performance.now();
       // Note: Switched to queryFlowise because it is the imported service
       const response = await queryFlowise(userMsg.text);
+      const finishedAt = performance.now();
+      setLastLatencyMs(Math.round(finishedAt - startedAt));
 
     setMessages(prev => prev.map(msg => 
     msg.id === aiMsgId 
@@ -90,9 +94,12 @@ const App: React.FC = () => {
     ));
 
     } catch (error) {
+      const errMsg = error instanceof Error 
+        ? error.message || "Connection interrupted. Unable to verify policy data sources."
+        : "Connection interrupted. Unable to verify policy data sources.";
       setMessages(prev => prev.map(msg => 
         msg.id === aiMsgId 
-          ? { ...msg, text: "Connection interrupted. Unable to verify policy data sources.", isThinking: false } 
+          ? { ...msg, text: errMsg, isThinking: false } 
           : msg
       ));
     } finally {
@@ -163,7 +170,12 @@ const App: React.FC = () => {
               <div className="p-4 pt-8 border-b border-white/10 bg-transparent flex justify-between items-center">
                   <div className="flex items-center gap-2">
                       <span className="w-2 h-2 bg-freetown-neonGreen rounded-full animate-pulse shadow-[0_0_8px_rgba(0,255,157,0.6)]"></span>
-                      <span className="text-xs font-mono text-gray-300 shadow-black text-shadow font-medium">SECURE CHANNEL</span>
+                  <span className="text-xs font-mono text-gray-300 shadow-black text-shadow font-medium">SECURE CHANNEL</span>
+                  {lastLatencyMs !== null && (
+                    <span className="text-[10px] text-gray-400 bg-white/5 border border-white/10 rounded px-2 py-1">
+                      Last response: {lastLatencyMs} ms
+                    </span>
+                  )}
                   </div>
                   
                   {/* Context Dropdown */}
