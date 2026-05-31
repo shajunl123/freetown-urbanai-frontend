@@ -1,7 +1,10 @@
-// ./services/geminiService.ts
-// NOTE: This now targets the public n8n webhook that handles chat replies.
 export async function queryFlowise(prompt: string): Promise<string> {
   try {
+    const chatWebhookUrl = import.meta.env.VITE_CHAT_WEBHOOK_URL;
+    if (!chatWebhookUrl) {
+      throw new Error("Chat workflow is not configured. Set VITE_CHAT_WEBHOOK_URL.");
+    }
+
     // n8n embedded chat "made publicly available" typically accepts a single object.
     // Include common fields (chatInput + sessionId + action) to satisfy the trigger.
     const payload = {
@@ -10,14 +13,11 @@ export async function queryFlowise(prompt: string): Promise<string> {
       chatInput: prompt,
     };
 
-    const res = await fetch(
-      "https://fcc-tool.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
+    const res = await fetch(chatWebhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
     if (!res.ok) {
       // surface backend error text to the UI

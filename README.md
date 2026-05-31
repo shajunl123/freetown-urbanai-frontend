@@ -1,100 +1,26 @@
 # Freetown UrbanAI Frontend
 
-Freetown UrbanAI is an early-stage civic AI assistant prototype for municipal planning, environmental policy, and urban resilience workflows.
+Freetown UrbanAI is an open-source civic AI interface for municipal policy, urban planning, and climate-resilience workflows in data-poor city environments.
 
-The frontend provides a policy-team interface for querying urban planning and environmental materials, uploading technical documents, and supporting faster review of fragmented evidence in data-poor city government contexts.
+The project aims to help policy teams query fragmented planning documents, climate action materials, project trackers, and implementation evidence through a retrieval-augmented generation (RAG) workflow.
 
-## Purpose
+## Why this matters
 
-Municipal policy teams often work across scattered planning documents, environmental reports, infrastructure files, spreadsheets, and partner deliverables. Freetown UrbanAI explores how a lightweight AI interface can help public-sector teams ask better questions of those materials and convert technical evidence into usable policy insight.
+Many city governments work with scattered PDFs, donor reports, planning frameworks, and incomplete project data. Freetown UrbanAI explores how open-source AI tools can support evidence access, policy analysis, and implementation tracking for municipal teams with limited analytical capacity.
 
-The project is grounded in Freetown City Council use cases, including:
+## Current status
 
-- urban planning and area action planning
-- air quality and environmental policy review
-- infrastructure and service-delivery evidence
-- climate resilience and informal settlement upgrading
-- document ingestion for policy and technical materials
+Early-stage frontend prototype built with TypeScript and Vite. RAG backend integration, document ingestion, and retrieval evaluation are planned.
 
-This repository contains the frontend application. It is designed to connect to an external workflow that handles document ingestion, retrieval, and AI response generation.
+## Planned features
 
-## Current Features
+- Document upload and indexing
+- RAG-based policy question answering
+- Source-grounded answers
+- Project and intervention evidence lookup
+- Climate and urban-planning document search
+- Maintainer workflows for issue triage and release checks
 
-- React and TypeScript interface for an urban policy AI assistant
-- Chat interface for policy and planning queries
-- Document upload panel for technical files such as PDF, CSV, JSON, DWG, DXF, and SHP
-- Freetown-focused dashboard panels for city metrics, live environment indicators, and planning-team context
-- External workflow integration for chat and file ingestion
-- Vite-based local development workflow
+## Open-source purpose
 
-## Tech Stack
-
-- React 19
-- TypeScript
-- Vite
-- Three.js
-- External AI workflow integration through HTTP endpoints
-
-## Repository Scope
-
-This repository is intended to be a reusable frontend template for civic AI and municipal policy workflows. It does not include confidential city documents, private policy drafts, or production secrets.
-
-Before deploying or making a fork public, review all configured backend endpoints and environment-specific settings.
-
-## Local Development
-
-Prerequisites:
-
-- Node.js
-- npm
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Start the local development server:
-
-```bash
-npm run dev
-```
-
-Build for production:
-
-```bash
-npm run build
-```
-
-Preview the production build:
-
-```bash
-npm run preview
-```
-
-## Configuration Notes
-
-The frontend currently expects external workflow endpoints for:
-
-- chat responses
-- file upload and document ingestion
-
-For public or production use, these endpoints should be moved into environment variables and configured per deployment environment. Do not commit API keys, private tokens, confidential documents, or sensitive operational URLs.
-
-## Maintainer Roadmap
-
-Near-term priorities:
-
-- move backend workflow URLs into environment variables
-- add source-grounded response metadata and citations
-- improve upload validation and error handling
-- add regression tests for chat and upload flows
-- document a safe local setup path for contributors
-- separate mock city indicators from live integrations
-- improve accessibility and mobile responsiveness
-
-## Open Source Direction
-
-The long-term goal is to make Freetown UrbanAI a practical open-source civic AI template for city teams, researchers, and public-sector technologists working with fragmented urban planning and environmental evidence.
-
-The project is especially relevant for cities where analytical capacity is limited, data is incomplete, and policy teams need tools that help them validate, retrieve, and interpret technical information without replacing human judgment.
+The project is designed as a reusable civic-AI workflow that can be adapted by other city teams, researchers, and civic-tech builders working in resource-constrained public-sector environments.

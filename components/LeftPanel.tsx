@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { WeatherData, UploadedDoc } from '../types';
 
-const N8N_UPLOAD_URL = "https://fcc-tool.app.n8n.cloud/form/82848bc4-5ea2-4e5a-8bb6-3c09b94a8c5d";
+const uploadFormUrl = import.meta.env.VITE_UPLOAD_FORM_URL;
 const ALLOWED_EXTS = ['pdf', 'dwg', 'dxf', 'csv', 'txt', 'json', 'shp'];
 
 async function uploadToN8n(file: File): Promise<void> {
+  if (!uploadFormUrl) {
+    throw new Error("Upload workflow is not configured. Set VITE_UPLOAD_FORM_URL.");
+  }
+
   const formData = new FormData();
   // Most n8n form triggers use "file" as the field name
   formData.append('file', file);
 
-  const res = await fetch(N8N_UPLOAD_URL, {
+  const res = await fetch(uploadFormUrl, {
     method: 'POST',
     body: formData
   });
