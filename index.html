@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Freetown UrbanAI | Policy Assistant</title>
+    <title>Freetown UrbanAI | Policy Intelligence Console</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <script>
@@ -17,12 +17,12 @@
             colors: {
               freetown: {
                 green: '#1EB53A', // Sierra Leone Green
-                neonGreen: '#00FF9D', // Cyberpunk Green
+                neonGreen: '#7DD3FC',
                 white: '#FFFFFF',
                 blue: '#0072C6', // Sierra Leone Blue
-                neonBlue: '#00F0FF', // Cyberpunk Blue
-                dark: '#0A0F16', // Tech dark
-                panel: 'rgba(5, 10, 20, 0.05)' // Extremely transparent
+                neonBlue: '#BAE6FD',
+                dark: '#0A0F16',
+                panel: 'rgba(5, 10, 20, 0.35)'
               }
             },
             animation: {
@@ -39,17 +39,15 @@
         overflow: hidden; /* Prevent scroll on body, handle in app */
       }
       .glass-panel {
-        /* Extremely transparent for maximum 3D visibility */
-        background: rgba(0, 5, 10, 0.15); 
-        backdrop-filter: blur(3px);
-        -webkit-backdrop-filter: blur(3px);
+        background: rgba(2, 6, 23, 0.55); 
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
       }
       
-      /* Strong text shadow for readability on transparent backgrounds */
       h1, h2, h3, span, p, div, button, input {
-        text-shadow: 0 2px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1);
+        text-shadow: 0 1px 3px rgba(0,0,0,0.75);
       }
 
       /* Custom Scrollbar */
@@ -78,7 +76,6 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body>
     <div id="root"></div>

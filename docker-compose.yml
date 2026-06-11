@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      CORS_ORIGIN: "http://localhost:5173"
+      DATA_DIR: "/app/data"
+      DB_PATH: "/app/data/freetown.db"
+      UPLOAD_DIR: "/app/data/uploads"
+      N8N_CHAT_WEBHOOK_URL: ""
+    volumes:
+      - freetown-urbanai-data:/app/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_POLICY_API_BASE_URL: "http://localhost:3001/api"
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  freetown-urbanai-data:

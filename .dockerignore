@@ -1,0 +1,11 @@
+.git
+.DS_Store
+.env.local
+backend/.env
+node_modules
+backend/node_modules
+dist
+backend/dist
+data
+backend/data
+*.log

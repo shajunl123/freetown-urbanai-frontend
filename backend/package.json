@@ -1,0 +1,41 @@
+{
+  "name": "freetown-urbanai-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "start:src": "tsx src/server.ts",
+    "db:init": "tsx src/db.ts",
+    "bootstrap:admin": "tsx src/scripts/bootstrapAdmin.ts",
+    "ingest": "tsx src/scripts/ingestLocalCorpus.ts",
+    "reindex": "tsx src/scripts/reindexCorpus.ts",
+    "seed:demo": "tsx src/scripts/seedDemoCorpus.ts",
+    "test": "env DB_PATH=/private/tmp/freetown-urbanai-backend-test.db tsx --test src/tests/**/*.test.ts",
+    "test:backend": "npm run test",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.0",
+    "mammoth": "^1.12.0",
+    "multer": "^1.4.5-lts.1",
+    "pdf2json": "^4.0.3",
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.8.2"
+  }
+}

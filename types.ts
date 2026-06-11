@@ -10,12 +10,89 @@ export interface GroundingChunk {
   };
 }
 
+export type PolicyIntelligenceMode = 'briefing' | 'qa' | 'claim_check' | 'evidence_lookup';
+export type UserRole = 'admin' | 'operator' | 'briefing_user';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
+  expiresAt: string;
+}
+
+export interface PolicySource {
+  title: string;
+  type?: string;
+  page?: string | number;
+  section?: string;
+  url?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  documentId?: string;
+  chunkId?: string;
+  chunkIndex?: number;
+  snippet?: string;
+  approvalStatus?: string;
+  sensitivityLevel?: string;
+  retrievalScore?: number;
+}
+
+export interface ClaimSafety {
+  level: 'firm' | 'careful' | 'not_ready';
+  explanation?: string;
+}
+
+export interface PolicyIntelligenceResponse {
+  answer: string;
+  mode?: PolicyIntelligenceMode;
+  sources?: PolicySource[];
+  caveats?: string[];
+  claimSafety?: ClaimSafety;
+}
+
+export interface EvidenceDocument {
+  id: string;
+  title: string;
+  type?: string | null;
+  sensitivity?: string;
+  approval?: string;
+  sensitivityLevel?: string;
+  approvalStatus?: string;
+  ingestionStatus?: 'registered' | 'extracting' | 'extracted' | 'chunking' | 'chunked' | 'indexing' | 'indexed' | 'failed';
+  chunkCount?: number;
+  sourceUrl?: string | null;
+  sourceType?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  uploadedAt?: string;
+  updatedAt?: string | null;
+  ingestedAt?: string | null;
+  indexedAt?: string | null;
+  lastError?: string | null;
+}
+
+export interface CorpusStats {
+  totalDocuments: number;
+  indexedDocuments: number;
+  failedDocuments: number;
+  totalChunks: number;
+  statusCounts: Record<string, number>;
+  approvalCounts: Record<string, number>;
+}
+
 export interface Message {
   id: string;
   role: Role;
   text: string;
   isThinking?: boolean;
   groundingChunks?: GroundingChunk[];
+  policyResponse?: PolicyIntelligenceResponse;
+  mode?: PolicyIntelligenceMode;
 }
 
 export interface ChatState {
@@ -53,4 +130,7 @@ export interface UploadedDoc {
   size: string;
   progress: number;
   status?: 'uploading' | 'done' | 'failed';
+  approval?: string;
+  ingestionStatus?: string;
+  source?: 'backend' | 'static' | 'local';
 }
