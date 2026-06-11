@@ -107,3 +107,43 @@ export async function deleteAdminUser(userId: string) {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+export async function fetchAdminSessions() {
+  const res = await adminFetch(`${getApiBaseUrl()}/admin/users/sessions`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchAdminSessionMessages(sessionId: string) {
+  const res = await adminFetch(`${getApiBaseUrl()}/admin/users/sessions/${sessionId}/messages`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchAdminDocuments() {
+  const res = await adminFetch(`${getApiBaseUrl()}/admin/users/documents`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchAdminDocumentChunks(documentId: string) {
+  const res = await adminFetch(`${getApiBaseUrl()}/admin/users/documents/${documentId}/chunks`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function updateAdminDocumentApproval(documentId: string, approvalStatus: string) {
+  const res = await adminFetch(`${getApiBaseUrl()}/admin/users/documents/${documentId}/approval`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approvalStatus }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchAdminProjectsOverview() {
+  const res = await adminFetch(`${getApiBaseUrl()}/admin/users/projects`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}

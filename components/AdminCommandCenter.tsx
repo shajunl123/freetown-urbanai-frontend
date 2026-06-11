@@ -8,9 +8,10 @@ import {
   generateSecurityReport,
 } from '../services/policyIntelligenceService';
 import { fetchAdminOverview, fetchAdminUsers, fetchAdminUserDetail, fetchAdminUserUsage, fetchAdminUserActivity, fetchAdminAuditLog, createAdminUser, updateAdminUser, disableAdminUser, enableAdminUser, deleteAdminUser } from '../services/adminServiceExtended';
+import { fetchAdminSessions, fetchAdminSessionMessages, fetchAdminDocuments, fetchAdminDocumentChunks, updateAdminDocumentApproval, fetchAdminProjectsOverview } from '../services/adminServiceExtended';
 import { AuthUser } from '../types';
 
-type AdminTab = 'overview' | 'users' | 'user-detail' | 'activity' | 'api' | 'security' | 'audit';
+type AdminTab = 'overview' | 'users' | 'user-detail' | 'activity' | 'chat' | 'evidence' | 'projects' | 'api' | 'security' | 'audit';
 
 interface AdminCommandCenterProps {
   currentUser: AuthUser;
@@ -30,6 +31,13 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ currentU
   const [loading, setLoading] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUser, setNewUser] = useState({ email: '', name: '', password: '', role: 'briefing_user' });
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [sessionMessages, setSessionMessages] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [documentChunks, setDocumentChunks] = useState<any[]>([]);
+  const [adminProjects, setAdminProjects] = useState<any[]>([]);
 
   const refreshOverview = useCallback(async () => {
     try {
@@ -78,7 +86,75 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ currentU
     if (activeTab === 'users' || activeTab === 'user-detail') refreshUsers();
     if (activeTab === 'api' || activeTab === 'security') refreshApiData();
     if (activeTab === 'audit') refreshAuditLog();
+    if (activeTab === 'chat') refreshSessions();
+    if (activeTab === 'evidence') refreshDocuments();
+    if (activeTab === 'projects') refreshProjects();
   }, [activeTab, refreshOverview, refreshUsers, refreshApiData, refreshAuditLog]);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const data = await fetchAdminSessions();
+      setSessions(data.sessions);
+    } catch (err) {
+      console.error('Failed to fetch sessions:', err);
+    }
+  }, []);
+
+  const refreshDocuments = useCallback(async () => {
+    try {
+      const data = await fetchAdminDocuments();
+      setDocuments(data.documents);
+    } catch (err) {
+      console.error('Failed to fetch documents:', err);
+    }
+  }, []);
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      const data = await fetchAdminProjectsOverview();
+      setAdminProjects(data.projects);
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    }
+  }, []);
+
+  const handleViewSession = async (sessionId: string) => {
+    setLoading(true);
+    try {
+      const data = await fetchAdminSessionMessages(sessionId);
+      setSelectedSession(data.session);
+      setSessionMessages(data.messages);
+    } catch (err) {
+      console.error('Failed to fetch session messages:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewDocument = async (documentId: string) => {
+    setLoading(true);
+    try {
+      const data = await fetchAdminDocumentChunks(documentId);
+      setSelectedDocument(data.document);
+      setDocumentChunks(data.chunks);
+    } catch (err) {
+      console.error('Failed to fetch document chunks:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprovalChange = async (documentId: string, approvalStatus: string) => {
+    try {
+      await updateAdminDocumentApproval(documentId, approvalStatus);
+      refreshDocuments();
+      if (selectedDocument?.id === documentId) {
+        setSelectedDocument({ ...selectedDocument, approval_status: approvalStatus, approval: approvalStatus });
+      }
+    } catch (err) {
+      console.error('Failed to update approval:', err);
+    }
+  };
 
   const handleViewUser = async (userId: string) => {
     setLoading(true);
@@ -142,6 +218,9 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ currentU
     { id: 'overview', label: 'System Overview', icon: '📊' },
     { id: 'users', label: 'Team & Users', icon: '👥' },
     { id: 'activity', label: 'Activity Logs', icon: '📋' },
+    { id: 'chat', label: 'Chat History', icon: '💬' },
+    { id: 'evidence', label: 'Evidence', icon: '📄' },
+    { id: 'projects', label: 'Projects', icon: '🏗️' },
     { id: 'api', label: 'API & Model', icon: '🔌' },
     { id: 'security', label: 'Security', icon: '🛡️' },
     { id: 'audit', label: 'Audit Trail', icon: '🔍' },
@@ -494,6 +573,260 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ currentU
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Chat History Tab */}
+        {activeTab === 'chat' && !selectedSession && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-white">All Chat Sessions</h3>
+            <p className="text-xs text-gray-400">Every user's conversation history. Click a session to view messages.</p>
+            <div className="space-y-2">
+              {sessions.map((s: any) => (
+                <button
+                  key={s.id}
+                  onClick={() => handleViewSession(s.id)}
+                  className="w-full glass-panel rounded-lg p-3 flex items-center justify-between hover:border-white/20 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                      s.user_role === 'admin' ? 'bg-amber-500/20 text-amber-200' :
+                      s.user_role === 'operator' ? 'bg-sky-500/20 text-sky-200' :
+                      'bg-emerald-500/20 text-emerald-200'
+                    }`}>
+                      {(s.user_name || s.user_email || '?')[0]?.toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-xs text-white font-medium">{s.user_name || s.user_email || 'Unknown'}</p>
+                      <p className="text-[10px] text-gray-500">{s.user_role?.replace('_', ' ')} • {s.message_count} messages</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-gray-500">{new Date(s.last_active).toLocaleString()}</p>
+                    <p className="text-[10px] text-gray-600">{s.id.slice(0, 8)}...</p>
+                  </div>
+                </button>
+              ))}
+              {sessions.length === 0 && <p className="text-xs text-gray-500">No sessions yet.</p>}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'chat' && selectedSession && (
+          <div className="space-y-4">
+            <button
+              onClick={() => { setSelectedSession(null); setSessionMessages([]); }}
+              className="text-xs text-gray-400 hover:text-white"
+            >
+              ← Back to All Sessions
+            </button>
+            <div className="glass-panel rounded-lg p-4">
+              <h3 className="text-sm font-bold text-white mb-1">
+                Session: {selectedSession.id.slice(0, 12)}...
+              </h3>
+              <p className="text-[10px] text-gray-500">
+                User: {sessionMessages[0]?.user_name || selectedSession.user_id || 'Unknown'} •
+                {sessionMessages.length} messages •
+                Created {new Date(selectedSession.created_at).toLocaleString()}
+              </p>
+            </div>
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              {sessionMessages.map((msg: any) => (
+                <div
+                  key={msg.id}
+                  className={`glass-panel rounded-lg p-3 ${
+                    msg.role === 'user' ? 'border-l-2 border-sky-400' : 'border-l-2 border-emerald-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                      msg.role === 'user' ? 'text-sky-300' : 'text-emerald-300'
+                    }`}>
+                      {msg.role === 'user' ? (msg.user_name || 'User') : 'UrbanAI'}
+                      {msg.mode && <span className="ml-2 text-gray-500">({msg.mode})</span>}
+                    </span>
+                    <span className="text-[10px] text-gray-600">{new Date(msg.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                  {msg.claim_safety && (
+                    <div className="mt-2 pt-2 border-t border-white/5">
+                      <span className="text-[10px] text-amber-300">Claim Safety: </span>
+                      <span className="text-[10px] text-gray-400">{msg.claim_safety}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {sessionMessages.length === 0 && <p className="text-xs text-gray-500">No messages in this session.</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Evidence Tab */}
+        {activeTab === 'evidence' && !selectedDocument && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-white">Evidence Corpus</h3>
+            <p className="text-xs text-gray-400">All documents in the evidence base. Click to inspect chunks and change approval status.</p>
+            <div className="space-y-2">
+              {documents.map((doc: any) => (
+                <button
+                  key={doc.id}
+                  onClick={() => handleViewDocument(doc.id)}
+                  className="w-full glass-panel rounded-lg p-3 flex items-center justify-between hover:border-white/20 transition-colors text-left"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white font-medium truncate">{doc.title}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                        doc.approval_status === 'approved' ? 'bg-emerald-500/20 text-emerald-300' :
+                        doc.approval_status === 'archived' ? 'bg-gray-500/20 text-gray-400' :
+                        'bg-amber-500/20 text-amber-300'
+                      }`}>
+                        {doc.approval_status || doc.approval || 'draft'}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                        doc.sensitivity_level === 'confidential' ? 'bg-red-500/20 text-red-300' :
+                        doc.sensitivity_level === 'internal' ? 'bg-sky-500/20 text-sky-300' :
+                        'bg-white/5 text-gray-400'
+                      }`}>
+                        {doc.sensitivity_level || doc.sensitivity || 'internal'}
+                      </span>
+                      <span className="text-[10px] text-gray-500">{doc.chunk_count} chunks</span>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] px-2 py-1 rounded ${
+                    doc.ingestion_status === 'indexed' ? 'bg-emerald-500/10 text-emerald-300' :
+                    doc.ingestion_status === 'failed' ? 'bg-red-500/10 text-red-300' :
+                    'bg-amber-500/10 text-amber-300'
+                  }`}>
+                    {doc.ingestion_status || 'registered'}
+                  </span>
+                </button>
+              ))}
+              {documents.length === 0 && <p className="text-xs text-gray-500">No documents in corpus.</p>}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'evidence' && selectedDocument && (
+          <div className="space-y-4">
+            <button
+              onClick={() => { setSelectedDocument(null); setDocumentChunks([]); }}
+              className="text-xs text-gray-400 hover:text-white"
+            >
+              ← Back to All Documents
+            </button>
+            <div className="glass-panel rounded-lg p-4">
+              <h3 className="text-sm font-bold text-white mb-1">{selectedDocument.title}</h3>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className={`px-2 py-0.5 rounded text-[10px] ${
+                  selectedDocument.approval_status === 'approved' ? 'bg-emerald-500/20 text-emerald-300' :
+                  selectedDocument.approval_status === 'archived' ? 'bg-gray-500/20 text-gray-400' :
+                  'bg-amber-500/20 text-amber-300'
+                }`}>
+                  {selectedDocument.approval_status || selectedDocument.approval || 'draft'}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] ${
+                  selectedDocument.sensitivity_level === 'confidential' ? 'bg-red-500/20 text-red-300' :
+                  'bg-sky-500/20 text-sky-300'
+                }`}>
+                  {selectedDocument.sensitivity_level || selectedDocument.sensitivity || 'internal'}
+                </span>
+              </div>
+              <div className="flex gap-2 mt-3">
+                {['draft', 'approved', 'archived'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => handleApprovalChange(selectedDocument.id, status)}
+                    className={`px-3 py-1.5 rounded text-xs border transition-colors ${
+                      (selectedDocument.approval_status || selectedDocument.approval) === status
+                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-200'
+                        : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="glass-panel rounded-lg p-4">
+              <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">
+                Chunks ({documentChunks.length})
+              </h4>
+              <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                {documentChunks.map((chunk: any) => (
+                  <div key={chunk.id} className="border border-white/5 rounded p-3 bg-black/10">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] text-sky-300 font-bold">Chunk {chunk.chunk_index}</span>
+                      <span className="text-[10px] text-gray-600">{chunk.token_estimate || '?'} tokens</span>
+                    </div>
+                    <p className="text-[11px] text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-6">
+                      {chunk.content?.slice(0, 500)}{chunk.content?.length > 500 ? '...' : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Projects Tab */}
+        {activeTab === 'projects' && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-white">Portfolio Projects</h3>
+            <p className="text-xs text-gray-400">All FCC climate portfolio projects with linked evidence.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {adminProjects.map((project: any) => (
+                <div key={project.id} className="glass-panel rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h4 className="text-sm text-white font-medium">{project.displayName || project.name}</h4>
+                      <p className="text-[10px] text-gray-500">{project.slug}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] ${
+                      project.status === 'on_track' ? 'bg-emerald-500/20 text-emerald-300' :
+                      project.status === 'delayed' ? 'bg-amber-500/20 text-amber-300' :
+                      'bg-red-500/20 text-red-300'
+                    }`}>
+                      {project.status?.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 leading-relaxed mb-3">{project.overview}</p>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="text-center">
+                      <p className="text-lg text-white font-display">{project.progress}%</p>
+                      <p className="text-[9px] text-gray-500">Progress</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg text-white font-display capitalize">{project.riskLevel}</p>
+                      <p className="text-[9px] text-gray-500">Risk</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg text-white font-display">{project.documentCount}</p>
+                      <p className="text-[9px] text-gray-500">Docs</p>
+                    </div>
+                  </div>
+                  {project.documents?.length > 0 && (
+                    <div className="border-t border-white/5 pt-2">
+                      <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Linked Evidence</p>
+                      {project.documents.slice(0, 3).map((doc: any) => (
+                        <div key={doc.id} className="flex items-center justify-between text-[10px] py-1">
+                          <span className="text-gray-300 truncate">{doc.title}</span>
+                          <span className={`ml-2 px-1 py-0.5 rounded ${
+                            doc.approvalStatus === 'approved' ? 'bg-emerald-500/10 text-emerald-300' :
+                            'bg-amber-500/10 text-amber-300'
+                          }`}>
+                            {doc.approvalStatus || 'draft'}
+                          </span>
+                        </div>
+                      ))}
+                      {project.documents.length > 3 && (
+                        <p className="text-[10px] text-gray-600 mt-1">+{project.documents.length - 3} more</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
