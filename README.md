@@ -9,7 +9,7 @@ It is a bounded leadership-use evidence console. It is not a generic chatbot, a 
 The current system is:
 
 ```text
-React/Vite frontend -> Node/Express backend API -> SQLite local corpus/retrieval -> direct model provider layer
+React/Vite frontend -> Node/Express backend API -> SQLite local corpus/cache -> FTS5 + optional Supabase pgvector retrieval -> direct model provider layer
 ```
 
 The backend owns the request lifecycle: sessions, message persistence, request logging, corpus retrieval, direct model invocation, response normalization, and answer composition. Provider selection is isolated behind `backend/src/services/upstreamPolicyService.ts` and `backend/src/providers/`.
@@ -24,6 +24,9 @@ The backend supports:
 - `.md`, `.txt`, `.json`, `.html`, and `.htm` text extraction
 - deterministic chunking
 - SQLite FTS5 lexical retrieval
+- provider-agnostic embeddings via NVIDIA, Mistral, or local TF-IDF fallback
+- optional Supabase storage and pgvector similarity retrieval
+- hybrid retrieval that merges keyword and vector results
 - approved-only default retrieval for normal briefing use
 - explicit debug/test access for draft-inclusive retrieval
 - retrieval-backed answers when no direct provider is configured
@@ -115,6 +118,7 @@ UPLOAD_DIR=data/uploads
 MODEL_PROVIDER_TYPE=none
 MODEL_PROVIDER_MODEL=
 MODEL_PROVIDER_TIMEOUT_MS=30000
+MODEL_PROVIDER_MAX_TOKENS=800
 MODEL_PROVIDER_BASE_URL=
 MODEL_PROVIDER_API_KEY=
 MODEL_PROVIDER_API_KEY_ENV_VAR=
@@ -122,8 +126,39 @@ ANTHROPIC_VERSION=2023-06-01
 LEGACY_N8N_CHAT_WEBHOOK_URL=
 
 OPENAI_API_KEY=
+NVIDIA_API_KEY=
 ANTHROPIC_API_KEY=
 DASHSCOPE_API_KEY=
+
+EMBEDDING_PROVIDER=local
+EMBEDDING_API_KEY=
+EMBEDDING_BASE_URL=
+EMBEDDING_MODEL=
+EMBEDDING_TIMEOUT_MS=30000
+EMBEDDING_BATCH_SIZE=32
+EMBEDDING_EXTRA_JSON=
+
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_ANON_KEY=
+
+ENABLE_DOCUMENT_ENCRYPTION=false
+DOCUMENT_ENCRYPTION_KEY=
+ENABLE_AUDIT_LOG=false
+ENABLE_PROMPT_GUARD=false
+ENABLE_OUTPUT_GUARD=false
+ENABLE_CONTENT_FILTER=false
+CONTENT_FILTER_BLACKLIST=
+ENABLE_RATE_LIMIT=false
+QUERY_RATE_LIMIT_PER_HOUR=100
+ENABLE_SESSION_INACTIVITY_TIMEOUT=false
+SESSION_INACTIVITY_MINUTES=30
+ENABLE_LOGIN_LOCKOUT=false
+LOGIN_LOCKOUT_THRESHOLD=5
+LOGIN_LOCKOUT_MINUTES=15
+ENABLE_DATA_RETENTION=false
+MODEL_PROVIDER_RETRY_COUNT=3
+API_CONFIG_ENCRYPTION_KEY=
 
 ADMIN_EMAIL=admin@example.local
 ADMIN_NAME=Policy Intelligence Admin
@@ -134,11 +169,33 @@ ADMIN_ROLE=admin
 Provider notes:
 
 - `MODEL_PROVIDER_TYPE=openai_compatible` supports OpenAI itself and OpenAI-compatible endpoints such as Alibaba DashScope / Qwen-style APIs.
+- `MODEL_PROVIDER_TYPE=nvidia` uses NVIDIA's OpenAI-compatible chat completions endpoint and defaults `MODEL_PROVIDER_BASE_URL` to `https://integrate.api.nvidia.com/v1`.
 - `MODEL_PROVIDER_BASE_URL` is optional for `openai_compatible` and `anthropic`; defaults are built in.
 - Use `MODEL_PROVIDER_API_KEY` directly or point at a named secret with `MODEL_PROVIDER_API_KEY_ENV_VAR`. This is useful for values like `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`, or `ANTHROPIC_API_KEY`.
 - `MODEL_PROVIDER_TYPE=anthropic` uses the native Anthropic Messages API path.
 - `LEGACY_N8N_CHAT_WEBHOOK_URL` exists only for transition use when `MODEL_PROVIDER_TYPE=legacy_n8n`.
 - Leave provider fields empty for retrieval-only local operation without direct model synthesis.
+
+Embedding notes:
+
+- `EMBEDDING_PROVIDER=nvidia` defaults to `https://integrate.api.nvidia.com/v1` and `nvidia/nv-embedqa-mistral-7b-v2`.
+- `EMBEDDING_PROVIDER=mistral` defaults to `https://api.mistral.ai/v1` and `mistral-embed`.
+- `EMBEDDING_PROVIDER=local` uses the local TF-IDF fallback and requires no external key.
+- `EMBEDDING_EXTRA_JSON` can be used for provider-specific embedding request fields without changing code.
+
+Supabase notes:
+
+- Supabase is optional. If `SUPABASE_URL` and a key are absent, SQLite remains the working local store.
+- Run `backend/supabase/schema.sql` in the Supabase SQL editor before enabling pgvector retrieval.
+- The backend syncs `documents`, `chunks`, `sessions`, and `messages` to Supabase on a best-effort basis.
+
+Security notes:
+
+- Security hardening controls are opt-in for the local pilot. Turn on the relevant `ENABLE_*` flags in `backend/.env`.
+- `DOCUMENT_ENCRYPTION_KEY` enables AES-256-GCM encryption for stored extracted document text.
+- `API_CONFIG_ENCRYPTION_KEY` is required before admin users can save provider API keys through the UI.
+- Admin-only routes under `/api/admin` expose audit logs, security dashboard data, API usage statistics, API config management, provider test calls, and manual security report generation.
+- Confidential documents are hidden from non-admin users and excluded from normal non-admin retrieval.
 
 `ADMIN_*` values are used by `npm run bootstrap:admin` to create or update the initial local administrator. Do not commit real passwords.
 
@@ -148,6 +205,7 @@ Runtime data is local-first:
 
 - `data/freetown.db` stores corpus metadata, extracted text, chunks, sessions, messages, and request logs.
 - `data/uploads/` stores uploaded local evidence files.
+- Supabase can mirror `documents`, `chunks`, `sessions`, and `messages`; SQLite remains the local cache and fallback.
 - `backend/fixtures/demo-corpus/` contains safe committed demo corpus files.
 - `backend/dist/` and `dist/` are generated build outputs.
 

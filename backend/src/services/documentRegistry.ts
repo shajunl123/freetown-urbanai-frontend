@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import type { ChunkRow, DocumentRow, DocumentTextRow } from '../types.js';
+import { syncDocumentToSupabase } from './supabaseService.js';
+import { decryptWithEnvKey, encryptWithEnvKey } from './cryptoService.js';
+import { securitySettings } from './securityConfig.js';
 
 export type IngestionStatus =
   | 'registered'
@@ -14,14 +17,18 @@ export type IngestionStatus =
 
 export function listDocuments(): DocumentRow[] {
   return db
-    .prepare('SELECT * FROM documents ORDER BY created_at DESC, rowid DESC')
+    .prepare('SELECT * FROM documents WHERE deleted_at IS NULL ORDER BY created_at DESC, rowid DESC')
     .all() as DocumentRow[];
 }
 
 export function getDocument(id: string): DocumentRow | undefined {
   return db
-    .prepare('SELECT * FROM documents WHERE id = ?')
+    .prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL')
     .get(id) as DocumentRow | undefined;
+}
+
+export function getDocumentIncludingDeleted(id: string): DocumentRow | undefined {
+  return db.prepare('SELECT * FROM documents WHERE id = ?').get(id) as DocumentRow | undefined;
 }
 
 export function getDocumentByFilePath(filePath: string): DocumentRow | undefined {
@@ -73,7 +80,9 @@ export function createDocument(params: {
     now
   );
 
-  return db.prepare('SELECT * FROM documents WHERE id = ?').get(id) as DocumentRow;
+  const document = db.prepare('SELECT * FROM documents WHERE id = ?').get(id) as DocumentRow;
+  void syncDocumentToSupabase(document);
+  return document;
 }
 
 export function updateDocumentApproval(
@@ -83,6 +92,8 @@ export function updateDocumentApproval(
   const result = db
     .prepare('UPDATE documents SET approval = ?, approval_status = ?, updated_at = ? WHERE id = ?')
     .run(approval, approval, new Date().toISOString(), id);
+  const document = getDocument(id);
+  if (document) void syncDocumentToSupabase(document);
   return result.changes > 0;
 }
 
@@ -99,6 +110,8 @@ export function updateDocumentIngestionStatus(
          last_error = CASE WHEN ? = 'failed' THEN last_error ELSE NULL END
      WHERE id = ?`
   ).run(status, new Date().toISOString(), status, new Date().toISOString(), status, new Date().toISOString(), status, id);
+  const document = getDocument(id);
+  if (document) void syncDocumentToSupabase(document);
 }
 
 export function updateDocumentMetadata(
@@ -147,19 +160,56 @@ export function updateDocumentMetadata(
   const result = db
     .prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`)
     .run(...values);
+  const document = getDocument(id);
+  if (document) void syncDocumentToSupabase(document);
+  return result.changes > 0;
+}
+
+export function softDeleteDocument(id: string): boolean {
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE documents
+       SET deleted_at = ?, updated_at = ?, ingestion_status = 'archived'
+       WHERE id = ? AND deleted_at IS NULL`
+    )
+    .run(now, now, id);
+  const document = getDocumentIncludingDeleted(id);
+  if (document) void syncDocumentToSupabase(document);
   return result.changes > 0;
 }
 
 export function storeDocumentText(documentId: string, content: string): DocumentTextRow {
   const extractedAt = new Date().toISOString();
+  const encrypted = securitySettings().documentEncryptionEnabled
+    ? encryptWithEnvKey(content, 'DOCUMENT_ENCRYPTION_KEY')
+    : null;
+  if (securitySettings().documentEncryptionEnabled && !encrypted) {
+    throw new Error('DOCUMENT_ENCRYPTION_KEY is required when document encryption is enabled.');
+  }
+
   db.prepare(
-    `INSERT INTO document_texts (document_id, content, char_count, extracted_at)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO document_texts (
+       document_id, content, content_encrypted, encryption_iv, encryption_tag,
+       char_count, extracted_at
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(document_id) DO UPDATE SET
        content = excluded.content,
+       content_encrypted = excluded.content_encrypted,
+       encryption_iv = excluded.encryption_iv,
+       encryption_tag = excluded.encryption_tag,
        char_count = excluded.char_count,
        extracted_at = excluded.extracted_at`
-  ).run(documentId, content, content.length, extractedAt);
+  ).run(
+    documentId,
+    encrypted?.ciphertext ?? content,
+    encrypted ? 1 : 0,
+    encrypted?.iv ?? null,
+    encrypted?.tag ?? null,
+    content.length,
+    extractedAt
+  );
 
   db.prepare(
     `UPDATE documents
@@ -170,15 +220,36 @@ export function storeDocumentText(documentId: string, content: string): Document
      WHERE id = ?`
   ).run(extractedAt, extractedAt, documentId);
 
+  const document = getDocument(documentId);
+  if (document) void syncDocumentToSupabase(document);
+
   return db
     .prepare('SELECT * FROM document_texts WHERE document_id = ?')
     .get(documentId) as DocumentTextRow;
 }
 
 export function getDocumentText(documentId: string): DocumentTextRow | undefined {
-  return db
+  const row = db
     .prepare('SELECT * FROM document_texts WHERE document_id = ?')
     .get(documentId) as DocumentTextRow | undefined;
+  if (!row) return undefined;
+
+  if (row.content_encrypted && row.encryption_iv && row.encryption_tag) {
+    const decrypted = decryptWithEnvKey(
+      {
+        ciphertext: row.content,
+        iv: row.encryption_iv,
+        tag: row.encryption_tag,
+      },
+      'DOCUMENT_ENCRYPTION_KEY'
+    );
+    return {
+      ...row,
+      content: decrypted ?? '',
+    };
+  }
+
+  return row;
 }
 
 export function replaceDocumentChunks(
@@ -252,6 +323,8 @@ export function replaceDocumentChunks(
   });
 
   tx();
+  const document = getDocument(documentId);
+  if (document) void syncDocumentToSupabase(document);
   return listDocumentChunks(documentId);
 }
 
@@ -271,6 +344,8 @@ export function markDocumentFailed(documentId: string, error?: string): void {
   db.prepare(
     "UPDATE documents SET ingestion_status = 'failed', last_error = ?, updated_at = ? WHERE id = ?"
   ).run(error ?? null, new Date().toISOString(), documentId);
+  const document = getDocument(documentId);
+  if (document) void syncDocumentToSupabase(document);
 }
 
 export function corpusStats(): {

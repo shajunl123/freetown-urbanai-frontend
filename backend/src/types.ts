@@ -67,13 +67,37 @@ export interface DocumentRow {
   uploaded_by: string | null;
   chunk_count: number;
   ingested_at: string | null;
+  retention_expires_at: string | null;
+  retention_action: string | null;
+  archived_at: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string | null;
+}
+
+export interface ProjectRow {
+  id: string;
+  slug: string;
+  name: string;
+  display_name: string;
+  status: string;
+  risk_level: string;
+  progress: number;
+  overview: string;
+  key_metrics_json: string | null;
+  keywords_json: string | null;
+  created_at: string;
+  updated_at: string | null;
+  archived_at: string | null;
+  document_count?: number;
 }
 
 export interface DocumentTextRow {
   document_id: string;
   content: string;
+  content_encrypted?: number | null;
+  encryption_iv?: string | null;
+  encryption_tag?: string | null;
   char_count: number;
   extracted_at: string;
 }
@@ -90,6 +114,9 @@ export interface ChunkRow {
   token_estimate: number;
   indexed_at: string | null;
   embedding: Buffer | null;
+  embedding_provider: string | null;
+  embedding_model: string | null;
+  embedding_dim: number | null;
   created_at: string;
 }
 
@@ -178,5 +205,6 @@ export interface AuthSessionRow {
   token_hash: string;
   created_at: string;
   expires_at: string;
+  last_active_at: string | null;
   revoked_at: string | null;
 }

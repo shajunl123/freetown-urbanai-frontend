@@ -1,7 +1,11 @@
 import type { ProviderStatus, ProviderType, ResolvedProviderConfig } from './types.js';
+import db from '../db.js';
+import { decryptWithEnvKey } from '../services/cryptoService.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_TOKENS = 800;
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
 const DEFAULT_ANTHROPIC_VERSION = '2023-06-01';
 
@@ -9,6 +13,7 @@ function normalizeProviderType(value: string | undefined): ProviderType {
   const normalized = value?.trim().toLowerCase();
   if (
     normalized === 'openai_compatible' ||
+    normalized === 'nvidia' ||
     normalized === 'anthropic' ||
     normalized === 'legacy_n8n' ||
     normalized === 'none'
@@ -28,6 +33,49 @@ function parseTimeoutMs(value: string | undefined): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
 }
 
+function parseMaxTokens(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_TOKENS;
+}
+
+function activeDbProviderConfig():
+  | {
+      type: 'openai_compatible' | 'nvidia' | 'anthropic';
+      model: string;
+      baseUrl: string;
+      apiKey: string;
+      timeoutMs: number;
+      maxTokens: number;
+    }
+  | null {
+  const row = db.prepare(
+    'SELECT * FROM api_provider_configs WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1'
+  ).get() as any | undefined;
+
+  if (!row) return null;
+  const type = normalizeProviderType(row.provider_type);
+  if (type === 'none' || type === 'legacy_n8n') return null;
+  const apiKey = row.api_key_ciphertext && row.api_key_iv && row.api_key_tag
+    ? decryptWithEnvKey(
+        {
+          ciphertext: row.api_key_ciphertext,
+          iv: row.api_key_iv,
+          tag: row.api_key_tag,
+        },
+        'API_CONFIG_ENCRYPTION_KEY'
+      )
+    : '';
+
+  return {
+    type,
+    model: row.model || '',
+    baseUrl: row.base_url || '',
+    apiKey: apiKey || '',
+    timeoutMs: row.timeout_ms || DEFAULT_TIMEOUT_MS,
+    maxTokens: row.max_tokens || DEFAULT_MAX_TOKENS,
+  };
+}
+
 function resolveApiKey(apiKeyEnvVar: string | undefined): string | undefined {
   if (!apiKeyEnvVar) return undefined;
   const apiKey = process.env[apiKeyEnvVar];
@@ -40,13 +88,42 @@ function resolveApiKeyEnvVar(type: ProviderType): string | undefined {
   }
 
   if (type === 'openai_compatible') return 'OPENAI_API_KEY';
+  if (type === 'nvidia') return 'NVIDIA_API_KEY';
   if (type === 'anthropic') return 'ANTHROPIC_API_KEY';
   return undefined;
 }
 
 export function resolveProviderConfig(): ResolvedProviderConfig {
+  const dbConfig = activeDbProviderConfig();
+  if (dbConfig) {
+    if (dbConfig.type === 'anthropic') {
+      return {
+        type: 'anthropic',
+        model: dbConfig.model,
+        baseUrl: dbConfig.baseUrl || DEFAULT_ANTHROPIC_BASE_URL,
+        apiKey: dbConfig.apiKey,
+        timeoutMs: dbConfig.timeoutMs,
+        maxTokens: dbConfig.maxTokens,
+        anthropicVersion:
+          process.env.ANTHROPIC_VERSION?.trim() || DEFAULT_ANTHROPIC_VERSION,
+      };
+    }
+
+    return {
+      type: dbConfig.type,
+      model: dbConfig.model,
+      baseUrl:
+        dbConfig.baseUrl ||
+        (dbConfig.type === 'nvidia' ? DEFAULT_NVIDIA_BASE_URL : DEFAULT_OPENAI_BASE_URL),
+      apiKey: dbConfig.apiKey,
+      timeoutMs: dbConfig.timeoutMs,
+      maxTokens: dbConfig.maxTokens,
+    };
+  }
+
   const type = normalizeProviderType(process.env.MODEL_PROVIDER_TYPE);
   const timeoutMs = parseTimeoutMs(process.env.MODEL_PROVIDER_TIMEOUT_MS);
+  const maxTokens = parseMaxTokens(process.env.MODEL_PROVIDER_MAX_TOKENS);
 
   if (type === 'none') {
     return { type: 'none', timeoutMs };
@@ -73,15 +150,17 @@ export function resolveProviderConfig(): ResolvedProviderConfig {
   const apiKey =
     process.env.MODEL_PROVIDER_API_KEY?.trim() || resolveApiKey(apiKeyEnvVar);
 
-  if (type === 'openai_compatible') {
+  if (type === 'openai_compatible' || type === 'nvidia') {
     return {
       type,
       model: model || '',
       baseUrl:
-        process.env.MODEL_PROVIDER_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
+        process.env.MODEL_PROVIDER_BASE_URL?.trim() ||
+        (type === 'nvidia' ? DEFAULT_NVIDIA_BASE_URL : DEFAULT_OPENAI_BASE_URL),
       apiKey: apiKey || '',
       apiKeyEnvVar,
       timeoutMs,
+      maxTokens,
     };
   }
 
@@ -93,6 +172,7 @@ export function resolveProviderConfig(): ResolvedProviderConfig {
     apiKey: apiKey || '',
     apiKeyEnvVar,
     timeoutMs,
+    maxTokens,
     anthropicVersion:
       process.env.ANTHROPIC_VERSION?.trim() || DEFAULT_ANTHROPIC_VERSION,
   };

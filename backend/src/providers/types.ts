@@ -3,6 +3,7 @@ import type { PolicyIntelligenceMode, RetrievalResult } from '../types.js';
 export type ProviderType =
   | 'none'
   | 'openai_compatible'
+  | 'nvidia'
   | 'anthropic'
   | 'legacy_n8n';
 
@@ -30,12 +31,13 @@ export interface ProviderStatus {
 }
 
 export interface OpenAICompatibleProviderConfig {
-  type: 'openai_compatible';
+  type: 'openai_compatible' | 'nvidia';
   model: string;
   baseUrl: string;
   apiKey: string;
   apiKeyEnvVar?: string;
   timeoutMs: number;
+  maxTokens?: number;
 }
 
 export interface AnthropicProviderConfig {
@@ -45,6 +47,7 @@ export interface AnthropicProviderConfig {
   apiKey: string;
   apiKeyEnvVar?: string;
   timeoutMs: number;
+  maxTokens?: number;
   anthropicVersion: string;
 }
 

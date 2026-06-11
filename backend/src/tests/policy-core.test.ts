@@ -31,7 +31,14 @@ import {
   isPlatformOwner,
 } from '../permissions.js';
 import { resolveProviderConfig } from '../providers/config.js';
+import { getEmbeddingProviderStatus } from '../services/embeddingProviders.js';
 import { getPolicyAnswerFromUpstream } from '../services/upstreamPolicyService.js';
+import {
+  getProjectDocumentIds,
+  listProjectDocuments,
+  listProjects,
+  syncProjectDocumentLinks,
+} from '../services/projectService.js';
 
 beforeEach(() => {
   db.exec(`
@@ -40,11 +47,39 @@ beforeEach(() => {
     DELETE FROM sessions;
     DELETE FROM auth_sessions;
     DELETE FROM users;
+    DELETE FROM project_documents;
+    DELETE FROM projects;
     DELETE FROM document_texts;
     DELETE FROM chunks;
     DELETE FROM documents;
     INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild');
   `);
+});
+
+test('portfolio projects seed and link matching evidence documents', () => {
+  const airQualityDoc = createDocument({
+    title: 'Air Quality Baseline Assessment — Moyiba',
+    type: 'PDF',
+    approval: 'approved',
+    sensitivity: 'internal',
+  });
+  createDocument({
+    title: 'General Mayor Briefing Note',
+    type: 'DOCX',
+    approval: 'approved',
+    sensitivity: 'internal',
+  });
+
+  const projects = listProjects();
+  assert.equal(projects.length, 8);
+
+  const airQuality = projects.find((project) => project.slug === 'air-quality');
+  assert.ok(airQuality);
+
+  syncProjectDocumentLinks();
+  const linkedDocs = listProjectDocuments(airQuality.id);
+  assert.equal(linkedDocs.some((doc) => doc.id === airQualityDoc.id), true);
+  assert.deepEqual(getProjectDocumentIds([airQuality.id]), [airQualityDoc.id]);
 });
 
 async function withEnv<T>(
@@ -168,6 +203,59 @@ test('provider config resolves openai-compatible env-driven settings', async () 
       assert.equal(config.model, 'gpt-test');
       assert.equal(config.baseUrl, 'https://openai-compatible.example/v1');
       assert.equal(config.apiKey, 'dashscope-test-key');
+    }
+  );
+});
+
+test('provider config resolves nvidia as an openai-compatible LLM provider', async () => {
+  await withEnv(
+    {
+      MODEL_PROVIDER_TYPE: 'nvidia',
+      MODEL_PROVIDER_MODEL: 'nvidia-test-model',
+      MODEL_PROVIDER_API_KEY_ENV_VAR: undefined,
+      MODEL_PROVIDER_API_KEY: undefined,
+      NVIDIA_API_KEY: 'nvidia-test-key',
+      MODEL_PROVIDER_BASE_URL: undefined,
+      LEGACY_N8N_CHAT_WEBHOOK_URL: undefined,
+      N8N_CHAT_WEBHOOK_URL: undefined,
+    },
+    () => {
+      const config = resolveProviderConfig();
+      assert.equal(config.type, 'nvidia');
+      assert.equal(config.model, 'nvidia-test-model');
+      assert.equal(config.baseUrl, 'https://integrate.api.nvidia.com/v1');
+      assert.equal(config.apiKey, 'nvidia-test-key');
+    }
+  );
+});
+
+test('embedding provider config resolves nvidia defaults and local fallback', async () => {
+  await withEnv(
+    {
+      EMBEDDING_PROVIDER: 'nvidia',
+      EMBEDDING_API_KEY: 'embedding-test-key',
+      EMBEDDING_BASE_URL: undefined,
+      EMBEDDING_MODEL: undefined,
+    },
+    () => {
+      const status = getEmbeddingProviderStatus();
+      assert.equal(status.provider, 'nvidia');
+      assert.equal(status.configured, true);
+      assert.equal(status.baseUrl, 'https://integrate.api.nvidia.com/v1');
+      assert.equal(status.model, 'nvidia/nv-embedqa-mistral-7b-v2');
+    }
+  );
+
+  await withEnv(
+    {
+      EMBEDDING_PROVIDER: undefined,
+      EMBEDDING_API_KEY: undefined,
+    },
+    () => {
+      const status = getEmbeddingProviderStatus();
+      assert.equal(status.provider, 'local');
+      assert.equal(status.configured, true);
+      assert.equal(status.external, false);
     }
   );
 });

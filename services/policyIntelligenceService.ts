@@ -3,21 +3,16 @@ import {
   AuthUser,
   CorpusStats,
   EvidenceDocument,
+  ApiUsageStatus,
+  SecurityDashboard,
+  PortfolioProject,
   PolicyIntelligenceMode,
   PolicyIntelligenceResponse,
 } from '../types';
 
 const SESSION_STORAGE_KEY = 'freetown-urbanai.policy-session-id';
 const AUTH_STORAGE_KEY = 'freetown-urbanai.auth-token';
-const DEFAULT_API_BASE_URL = 'http://localhost:3001/api';
-
-function notifyAuthExpired(): void {
-  try {
-    window.dispatchEvent(new Event('policy-auth-expired'));
-  } catch {
-    // Event dispatch can fail in non-browser test contexts.
-  }
-}
+const DEFAULT_API_BASE_URL = '/api';
 
 function getApiBaseUrl(): string {
   return (import.meta.env.VITE_POLICY_API_BASE_URL || DEFAULT_API_BASE_URL)
@@ -109,7 +104,8 @@ function ensurePolicyResponse(
 
 export async function queryPolicyIntelligence(
   prompt: string,
-  mode: PolicyIntelligenceMode
+  mode: PolicyIntelligenceMode,
+  projectIds: string[] = []
 ): Promise<PolicyIntelligenceResponse> {
   const res = await policyFetch(`${getApiBaseUrl()}/chat`, {
     method: 'POST',
@@ -118,6 +114,7 @@ export async function queryPolicyIntelligence(
       sessionId: getPolicySessionId(),
       prompt,
       mode,
+      projectIds,
     }),
   });
 
@@ -147,6 +144,31 @@ export async function queryPolicyIntelligence(
   }
 }
 
+export async function fetchProjects(): Promise<PortfolioProject[]> {
+  const res = await policyFetch(`${getApiBaseUrl()}/projects`);
+  const text = await res.text();
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('Your access session has expired. Please sign in again.');
+    }
+    throw new Error(text || `Project registry request failed (${res.status})`);
+  }
+  return JSON.parse(text) as PortfolioProject[];
+}
+
+export async function fetchProjectDocuments(projectId: string): Promise<EvidenceDocument[]> {
+  const res = await policyFetch(`${getApiBaseUrl()}/projects/${projectId}/documents`);
+  const text = await res.text();
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('Your access session has expired. Please sign in again.');
+    }
+    throw new Error(text || `Project documents request failed (${res.status})`);
+  }
+  const data = JSON.parse(text) as { documents: EvidenceDocument[] };
+  return data.documents;
+}
+
 export async function uploadEvidenceDocument(file: File): Promise<EvidenceDocument> {
   const formData = new FormData();
   formData.append('file', file);
@@ -171,6 +193,33 @@ export async function uploadEvidenceDocument(file: File): Promise<EvidenceDocume
   }
 
   return JSON.parse(text) as EvidenceDocument;
+}
+
+export async function fetchDocumentPreview(documentId: string): Promise<EvidenceDocument> {
+  const res = await policyFetch(`${getApiBaseUrl()}/documents/${documentId}/preview`);
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || `Document preview failed (${res.status})`);
+  const data = JSON.parse(text) as {
+    document: EvidenceDocument;
+    preview: string;
+    canPreviewPdf: boolean;
+    pdfUrl: string | null;
+  };
+  return {
+    ...data.document,
+    preview: data.preview,
+    canPreviewPdf: data.canPreviewPdf,
+    pdfUrl: data.pdfUrl,
+  };
+}
+
+export async function fetchDocumentFileBlob(documentId: string): Promise<Blob> {
+  const res = await policyFetch(`${getApiBaseUrl()}/documents/${documentId}/file`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Document file preview failed (${res.status})`);
+  }
+  return res.blob();
 }
 
 export async function fetchEvidenceDocuments(): Promise<EvidenceDocument[]> {
@@ -282,4 +331,49 @@ export async function logoutPolicyUser(): Promise<void> {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => undefined);
+}
+
+export async function fetchApiUsageStatus(): Promise<ApiUsageStatus> {
+  const res = await policyFetch(`${getApiBaseUrl()}/admin/api-usage`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchSecurityDashboard(): Promise<SecurityDashboard> {
+  const res = await policyFetch(`${getApiBaseUrl()}/admin/security-dashboard`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function fetchApiConfig(): Promise<any> {
+  const res = await policyFetch(`${getApiBaseUrl()}/admin/api-config`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveApiConfig(payload: Record<string, unknown>): Promise<any> {
+  const res = await policyFetch(`${getApiBaseUrl()}/admin/api-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, confirm: true }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function testApiConfig(): Promise<any> {
+  const res = await policyFetch(`${getApiBaseUrl()}/admin/api-config/test`, {
+    method: 'POST',
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(body);
+  return JSON.parse(body);
+}
+
+export async function generateSecurityReport(): Promise<{ path: string; content: string }> {
+  const res = await policyFetch(`${getApiBaseUrl()}/admin/security-report`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }

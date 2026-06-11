@@ -60,23 +60,30 @@ async function extractPdf(filePath: string): Promise<string> {
     pdfParser.on('pdfParser_dataReady', (data: any) => {
       const pages: string[] = [];
       for (const page of (data.Pages || [])) {
-        const lines: string[] = [];
-        let currentY = -1;
-        let currentLine = '';
+        const lineMap = new Map<number, Array<{ x: number; text: string }>>();
         for (const text of (page.Texts || [])) {
-          const decoded = (text.R || []).map((r: any) => safeDecodeURIComponent(r.T || '')).join('');
+          const decoded = (text.R || [])
+            .map((r: any) => safeDecodeURIComponent(r.T || ''))
+            .join('')
+            .trim();
+          if (!decoded) continue;
           const y = Math.round(text.y * 10) / 10;
-          if (currentY === -1) {
-            currentY = y;
-          }
-          if (Math.abs(y - currentY) > 0.3) {
-            if (currentLine.trim()) lines.push(currentLine.trim());
-            currentLine = '';
-            currentY = y;
-          }
-          currentLine += decoded;
+          const bucket = lineMap.get(y) ?? [];
+          bucket.push({ x: Number(text.x) || 0, text: decoded });
+          lineMap.set(y, bucket);
         }
-        if (currentLine.trim()) lines.push(currentLine.trim());
+
+        const lines = Array.from(lineMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([, fragments]) =>
+            fragments
+              .sort((a, b) => a.x - b.x)
+              .map((fragment) => fragment.text)
+              .join('  ')
+              .trim()
+          )
+          .filter(Boolean);
+
         pages.push(lines.join('\n'));
       }
       resolve(pages.join('\n\n'));

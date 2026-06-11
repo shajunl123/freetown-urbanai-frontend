@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { CorpusStats, EvidenceDocument, UploadedDoc } from '../types';
+import { CorpusStats, EvidenceDocument, PortfolioProject, UploadedDoc } from '../types';
 import {
   checkPolicyBackendHealth,
   fetchCorpusStats,
   fetchEvidenceDocuments,
+  fetchDocumentFileBlob,
+  fetchDocumentPreview,
   uploadEvidenceDocument,
   ingestEvidenceDocument,
 } from '../services/policyIntelligenceService';
 
-const ALLOWED_EXTS = ['md', 'txt', 'json', 'html', 'htm'];
+const ALLOWED_EXTS = ['md', 'txt', 'json', 'html', 'htm', 'pdf', 'docx', 'xlsx', 'xls'];
 
 function mapEvidenceDocument(doc: EvidenceDocument): UploadedDoc {
   return {
@@ -27,11 +29,15 @@ function mapEvidenceDocument(doc: EvidenceDocument): UploadedDoc {
 interface LeftPanelProps {
   canManageCorpus?: boolean;
   isPlatformOwner?: boolean;
+  selectedProjects?: PortfolioProject[];
+  projectDocuments?: EvidenceDocument[];
 }
 
 export const LeftPanel: React.FC<LeftPanelProps> = ({
   canManageCorpus = false,
   isPlatformOwner = false,
+  selectedProjects = [],
+  projectDocuments = [],
 }) => {
   const [docs, setDocs] = useState<UploadedDoc[]>([
     { id: 'static-1', name: 'Climate Action Plan portfolio assessment', type: 'CAP', size: 'Expected corpus', progress: 100, source: 'static' },
@@ -42,6 +48,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const [isRegistryLoading, setIsRegistryLoading] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [corpusStats, setCorpusStats] = useState<CorpusStats | null>(null);
+  const [selectedPreview, setSelectedPreview] = useState<UploadedDoc | null>(null);
 
   const refreshDocuments = () => {
     setIsRegistryLoading(true);
@@ -72,7 +79,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
     refreshDocuments();
   }, []);
 
+  const displayedDocs =
+    selectedProjects.length > 0
+      ? projectDocuments.map(mapEvidenceDocument)
+      : docs;
+
   const handleFileUpload = (file: File) => {
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     const newDoc: UploadedDoc = {
       id: Date.now().toString(),
       name: file.name,
@@ -80,10 +93,24 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
       progress: 5,
       status: 'uploading',
-      source: 'local'
+      source: 'local',
+      preview: '',
+      canPreviewPdf: isPdf,
+      pdfObjectUrl: isPdf ? URL.createObjectURL(file) : undefined,
     };
 
     setDocs(prev => [newDoc, ...prev].slice(0, 4));
+    setSelectedPreview(newDoc);
+
+    if (!isPdf && file.size < 2 * 1024 * 1024) {
+      file.text()
+        .then((text) => {
+          const preview = text.slice(0, 500);
+          setSelectedPreview((prev) => prev?.id === newDoc.id ? { ...prev, preview } : prev);
+          setDocs((prev) => prev.map((doc) => doc.id === newDoc.id ? { ...doc, preview } : doc));
+        })
+        .catch(() => undefined);
+    }
 
     uploadEvidenceDocument(file)
       .then((registeredDoc) => {
@@ -101,6 +128,23 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           });
       })
       .then((registeredDoc) => {
+        fetchDocumentPreview(registeredDoc.id)
+          .then(async (previewDoc) => {
+            let pdfObjectUrl: string | undefined;
+            if (previewDoc.canPreviewPdf) {
+              const blob = await fetchDocumentFileBlob(previewDoc.id);
+              pdfObjectUrl = URL.createObjectURL(blob);
+            }
+            const mapped = {
+              ...mapEvidenceDocument(previewDoc),
+              preview: previewDoc.preview,
+              canPreviewPdf: previewDoc.canPreviewPdf,
+              pdfObjectUrl,
+            };
+            setSelectedPreview(mapped);
+            setDocs((prev) => prev.map((doc) => doc.id === newDoc.id ? mapped : doc));
+          })
+          .catch(() => undefined);
         setDocs(prev => prev.map(doc =>
           doc.id === newDoc.id
             ? { ...mapEvidenceDocument(registeredDoc), progress: 100, status: 'done' }
@@ -116,6 +160,28 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
             : doc
         ));
       });
+  };
+
+  const handlePreviewDocument = (doc: UploadedDoc) => {
+    setSelectedPreview(doc);
+    if (doc.source !== 'backend') return;
+    fetchDocumentPreview(doc.id)
+      .then(async (previewDoc) => {
+        let pdfObjectUrl: string | undefined;
+        if (previewDoc.canPreviewPdf) {
+          const blob = await fetchDocumentFileBlob(previewDoc.id);
+          pdfObjectUrl = URL.createObjectURL(blob);
+        }
+        const mapped = {
+          ...doc,
+          preview: previewDoc.preview,
+          canPreviewPdf: previewDoc.canPreviewPdf,
+          pdfObjectUrl,
+        };
+        setSelectedPreview(mapped);
+        setDocs((prev) => prev.map((item) => item.id === doc.id ? mapped : item));
+      })
+      .catch(() => undefined);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -143,7 +209,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   };
 
   return (
-    <div className="hidden lg:flex flex-col w-80 gap-4 h-full pointer-events-auto">
+    <div className="flex flex-col w-full gap-4 h-full max-h-screen overflow-y-auto pr-1 pointer-events-auto">
       
       {/* Environment Widget - Very Transparent */}
       <div className="glass-panel rounded-xl p-4 relative overflow-hidden group hover:border-white/20 transition-colors backdrop-blur-sm">
@@ -211,7 +277,11 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       >
         <div className="flex justify-between items-center mb-4">
             <h3 className="text-xs font-display font-bold uppercase text-sky-200 tracking-widest">
-              {canManageCorpus ? 'Evidence Upload' : 'Corpus Registry'}
+              {selectedProjects.length > 0
+                ? 'Project Evidence'
+                : canManageCorpus
+                  ? 'Evidence Upload'
+                  : 'Corpus Registry'}
             </h3>
             {canManageCorpus && (
               <span className="text-[10px] text-gray-500">
@@ -245,14 +315,16 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
               <p className="text-xs text-gray-300">Add evidence document</p>
-              <p className="text-[9px] text-gray-600 mt-1">MD, TXT, JSON, HTML</p>
+              <p className="text-[9px] text-gray-600 mt-1">MD, TXT, JSON, HTML, PDF, DOCX, XLSX</p>
             </label>
           </div>
         ) : (
           <div className="border border-white/10 rounded-lg p-4 mb-4 bg-black/5">
             <p className="text-xs text-gray-300">Approved evidence view</p>
             <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-              Upload and ingestion operations are limited to corpus operators and the platform owner.
+              {selectedProjects.length > 0
+                ? `Showing documents linked to ${selectedProjects.map((project) => project.name).join(', ')}.`
+                : 'Upload and ingestion operations are limited to corpus operators and the platform owner.'}
             </p>
           </div>
         )}
@@ -267,8 +339,13 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
 
         {/* File List */}
         <div className="flex-1 flex flex-col justify-between space-y-2">
-          {docs.slice(0, 4).map(doc => (
-            <div key={doc.id} className="bg-black/5 p-2 rounded border border-white/5 flex items-center gap-3 group hover:border-white/20 transition-colors cursor-pointer hover:bg-black/10">
+          {displayedDocs.slice(0, 6).map(doc => (
+            <button
+              type="button"
+              key={doc.id}
+              onClick={() => handlePreviewDocument(doc)}
+              className="text-left bg-black/5 p-2 rounded border border-white/5 flex items-center gap-3 group hover:border-white/20 transition-colors cursor-pointer hover:bg-black/10"
+            >
               <div className="w-8 h-8 rounded bg-freetown-blue/10 flex items-center justify-center text-[10px] text-freetown-blue font-bold">
                 {doc.type}
               </div>
@@ -287,11 +364,39 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                   ? 'bg-red-500'
                   : doc.progress === 100
                     ? 'bg-freetown-green'
-                    : 'bg-freetown-blue'
+                  : 'bg-freetown-blue'
               }`}></div>
-            </div>
+            </button>
           ))}
+          {displayedDocs.length === 0 && selectedProjects.length > 0 && (
+            <div className="rounded border border-white/10 bg-black/10 p-3 text-xs text-gray-400 leading-relaxed">
+              No linked documents yet. The backend will still use the selected project name to focus retrieval until documents are linked.
+            </div>
+          )}
         </div>
+
+        {selectedPreview && (
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] uppercase tracking-widest text-gray-500">Preview</p>
+              <span className="text-[10px] text-gray-500">{selectedPreview.type}</span>
+            </div>
+            <p className="text-xs text-gray-200 mb-2 truncate">{selectedPreview.name}</p>
+            {selectedPreview.canPreviewPdf && selectedPreview.pdfObjectUrl ? (
+              <iframe
+                title="PDF preview"
+                src={selectedPreview.pdfObjectUrl}
+                className="w-full h-52 rounded border border-white/10 bg-white"
+              />
+            ) : (
+              <div className="max-h-48 overflow-y-auto rounded border border-white/10 bg-black/20 p-3">
+                <p className="text-[11px] leading-relaxed text-gray-300 whitespace-pre-wrap">
+                  {selectedPreview.preview || 'No text preview available yet.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-4 pt-3 border-t border-white/10">
              <button className="w-full py-2 bg-white/5 hover:bg-white/10 rounded text-xs text-gray-300 transition-colors flex items-center justify-center gap-2">

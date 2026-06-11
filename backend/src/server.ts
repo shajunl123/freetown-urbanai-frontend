@@ -5,6 +5,9 @@ import db from './db.js';
 import authRouter from './routes/auth.js';
 import chatRouter from './routes/chat.js';
 import documentsRouter from './routes/documents.js';
+import adminRouter from './routes/admin.js';
+import adminUsersRouter from './routes/admin-users.js';
+import projectsRouter from './routes/projects.js';
 import { DATA_DIR, DB_PATH, UPLOAD_DIR } from './paths.js';
 import { corpusStats } from './services/documentRegistry.js';
 import { debugRetrieval } from './services/retrievalService.js';
@@ -67,6 +70,9 @@ app.get('/api/ready', (_req, res) => {
 
 app.use('/api/chat', requireAuth, chatRouter);
 app.use('/api/documents', requireAuth, documentsRouter);
+app.use('/api/admin', requireAuth, adminRouter);
+app.use('/api/admin/users', requireAuth, adminUsersRouter);
+app.use('/api/projects', requireAuth, projectsRouter);
 
 app.get('/api/corpus/stats', requireAuth, (_req, res) => {
   res.json(corpusStats());
@@ -74,11 +80,11 @@ app.get('/api/corpus/stats', requireAuth, (_req, res) => {
 
 app.post('/api/corpus/reembed', requireAuth, requirePlatformOwner, async (_req, res) => {
   try {
-    const { rebuildVocabulary, embeddingStats } = await import('./services/embeddingService.js');
-    rebuildVocabulary();
+    const { rebuildEmbeddings, embeddingStats } = await import('./services/embeddingService.js');
+    await rebuildEmbeddings();
     const stats = embeddingStats();
     res.json({
-      message: `TF-IDF vocabulary rebuilt: ${stats.terms} terms, ${stats.embeddedChunks} chunks`,
+      message: `Embedding index rebuilt: ${stats.embeddedChunks} chunks, ${stats.terms} local terms`,
       ...stats,
     });
   } catch (err) {
@@ -181,6 +187,7 @@ app.listen(PORT, () => {
   console.log(`Freetown UrbanAI backend running on http://localhost:${PORT}`);
   console.log(`  POST /api/chat`);
   console.log(`  GET  /api/documents`);
+  console.log(`  GET  /api/projects`);
   console.log(`  POST /api/documents/upload`);
   console.log(`  GET  /api/corpus/stats`);
   console.log(`  GET  /api/retrieval/debug?q=...`);

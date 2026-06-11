@@ -3,8 +3,13 @@ import { FreetownMap } from './FreetownMap';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { ChatMessage } from './ChatMessage';
-import { queryPolicyIntelligence } from '../services/policyIntelligenceService';
-import { AuthUser, Message, PolicyIntelligenceMode, Role } from '../types';
+import { ProjectSelector } from './ProjectSelector';
+import {
+  fetchProjectDocuments,
+  fetchProjects,
+  queryPolicyIntelligence,
+} from '../services/policyIntelligenceService';
+import { AuthUser, EvidenceDocument, Message, PolicyIntelligenceMode, PortfolioProject, Role } from '../types';
 
 const modeOptions: Array<{ value: PolicyIntelligenceMode; label: string }> = [
   { value: 'briefing', label: 'Briefing' },
@@ -36,11 +41,13 @@ const initialMessages: Message[] = [
 interface PolicyConsoleProps {
   currentUser: AuthUser;
   onLogout: () => Promise<void>;
+  onOpenAdmin?: () => void;
 }
 
 export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
   currentUser,
   onLogout,
+  onOpenAdmin,
 }) => {
   const [input, setInput] = useState('');
   const [selectedMode, setSelectedMode] = useState<PolicyIntelligenceMode>('briefing');
@@ -48,6 +55,12 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
   const [showParticles, setShowParticles] = useState(true);
+  const [historySearch, setHistorySearch] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const [projects, setProjects] = useState<PortfolioProject[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [projectDocuments, setProjectDocuments] = useState<EvidenceDocument[]>([]);
+  const [isProjectsLoading, setIsProjectsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastActionTimeRef = useRef(Date.now());
   const isPlatformOwner = currentUser.role === 'admin';
@@ -86,8 +99,40 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
     if (messages.length > 1) handleUserAction();
   }, [messages, handleUserAction]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    setIsProjectsLoading(true);
+    fetchProjects()
+      .then(setProjects)
+      .catch((err) => {
+        console.error('Project registry unavailable:', err);
+        setProjects([]);
+      })
+      .finally(() => setIsProjectsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (selectedProjectIds.length === 0) {
+      setProjectDocuments([]);
+      return;
+    }
+    Promise.all(selectedProjectIds.map((projectId) => fetchProjectDocuments(projectId)))
+      .then((results) => {
+        const seen = new Set<string>();
+        const deduped: EvidenceDocument[] = [];
+        for (const doc of results.flat()) {
+          if (seen.has(doc.id)) continue;
+          seen.add(doc.id);
+          deduped.push(doc);
+        }
+        setProjectDocuments(deduped);
+      })
+      .catch((err) => {
+        console.error('Project documents unavailable:', err);
+        setProjectDocuments([]);
+      });
+  }, [selectedProjectIds]);
+
+  const submitPrompt = async () => {
     handleUserAction();
     if (!input.trim() || isLoading) return;
 
@@ -115,7 +160,7 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
 
     try {
       const startedAt = performance.now();
-      const response = await queryPolicyIntelligence(userMsg.text, selectedMode);
+      const response = await queryPolicyIntelligence(userMsg.text, selectedMode, selectedProjectIds);
       const finishedAt = performance.now();
       setLastLatencyMs(Math.round(finishedAt - startedAt));
 
@@ -146,6 +191,86 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitPrompt();
+  };
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void submitPrompt();
+      }
+      if (event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setInput('');
+        setMessages(initialMessages);
+      }
+      if (event.key === '/') {
+        event.preventDefault();
+        setShowHelp((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [input, isLoading, selectedMode]);
+
+  const visibleMessages = historySearch.trim()
+    ? messages.filter((message) =>
+        message.text.toLowerCase().includes(historySearch.trim().toLowerCase())
+      )
+    : messages;
+  const selectedProjects = selectedProjectIds
+    .map((projectId) => projects.find((project) => project.id === projectId))
+    .filter((project): project is PortfolioProject => Boolean(project));
+  const projectMessages = selectedProjects.length === 0
+    ? []
+    : messages.filter((message) => {
+        const text = message.text.toLowerCase();
+        return selectedProjects.some((project) =>
+          text.includes(project.name.toLowerCase()) ||
+          text.includes(project.slug.replace(/-/g, ' '))
+        );
+      }).slice(-4);
+
+  const exportMarkdown = () => {
+    const content = messages
+      .map((message) => {
+        const role = message.role === Role.USER ? 'User' : 'UrbanAI';
+        const sources = message.policyResponse?.sources
+          ?.map((source) => `- ${source.title}${source.section ? `, ${source.section}` : ''}`)
+          .join('\n');
+        return [`## ${role}`, '', message.text, sources ? `\nSources:\n${sources}` : ''].join('\n');
+      })
+      .join('\n\n');
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `urbanai-chat-${new Date().toISOString().slice(0, 10)}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPdf = () => {
+    const printable = window.open('', '_blank');
+    if (!printable) return;
+    const body = messages
+      .map((message) => `<section><h2>${message.role === Role.USER ? 'User' : 'UrbanAI'}</h2><p>${message.text.replace(/</g, '&lt;').replace(/\n/g, '<br/>')}</p></section>`)
+      .join('');
+    printable.document.write(`
+      <html><head><title>UrbanAI Analysis Export</title>
+      <style>body{font-family:Inter,Arial,sans-serif;padding:32px;color:#111}section{border-bottom:1px solid #ddd;padding:16px 0}h1{font-size:20px}h2{font-size:14px;text-transform:uppercase;color:#334155}p{font-size:13px;line-height:1.6}</style>
+      </head><body><h1>Freetown UrbanAI Analysis</h1>${body}</body></html>
+    `);
+    printable.document.close();
+    printable.focus();
+    printable.print();
   };
 
   return (
@@ -190,6 +315,15 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
               <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/30 flex items-center justify-center text-xs font-semibold uppercase">
                 {currentUser.name?.[0] || currentUser.email[0]}
               </div>
+              {onOpenAdmin && (
+                <button
+                  type="button"
+                  onClick={onOpenAdmin}
+                  className="text-[10px] uppercase tracking-wider text-amber-300 hover:text-amber-200 border border-amber-500/30 rounded px-2 py-1 bg-amber-500/10"
+                >
+                  Admin
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onLogout}
@@ -201,15 +335,17 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
           </div>
         </header>
 
-        <div className="flex-1 p-4 mt-4 flex gap-4 overflow-hidden">
+        <div className="flex-1 p-3 md:p-4 mt-2 md:mt-4 flex gap-3 lg:gap-4 overflow-hidden">
           <div
             onMouseEnter={handleUserAction}
             onClick={handleUserAction}
-            className="pointer-events-auto h-full w-80 shrink-0 hidden md:block"
+            className="pointer-events-auto h-full max-h-full w-72 lg:w-80 shrink-0 hidden md:block"
           >
             <LeftPanel
               canManageCorpus={canManageCorpus}
               isPlatformOwner={isPlatformOwner}
+              selectedProjects={selectedProjects}
+              projectDocuments={projectDocuments}
             />
           </div>
 
@@ -251,6 +387,33 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
                   </button>
                 ))}
               </div>
+
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Search chat history"
+                  className="w-full sm:w-48 bg-black/25 border border-white/10 rounded px-3 py-1.5 text-xs text-white placeholder-gray-500"
+                />
+                <button type="button" onClick={exportMarkdown} className="px-3 py-1.5 rounded border border-white/10 bg-white/5 text-xs text-gray-300 hover:text-white">
+                  Export MD
+                </button>
+                <button type="button" onClick={exportPdf} className="px-3 py-1.5 rounded border border-white/10 bg-white/5 text-xs text-gray-300 hover:text-white">
+                  Export PDF
+                </button>
+              </div>
+            </div>
+
+            <div className="border-b border-white/10 bg-slate-950/25 p-4">
+              <ProjectSelector
+                projects={projects}
+                selectedProjectIds={selectedProjectIds}
+                onChange={(ids) => {
+                  setSelectedProjectIds(ids);
+                  handleUserAction();
+                }}
+                isLoading={isProjectsLoading}
+              />
             </div>
 
             <div
@@ -259,9 +422,15 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
             >
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none opacity-30" />
 
-              {messages.map((msg) => (
+              {visibleMessages.map((msg) => (
                 <ChatMessage key={msg.id} message={msg} />
               ))}
+
+              {visibleMessages.length === 0 && (
+                <div className="relative rounded border border-white/10 bg-black/20 p-4 text-sm text-gray-400">
+                  No messages match this search.
+                </div>
+              )}
 
               {isLoading && !messages[messages.length - 1].text && (
                 <div className="flex items-center space-x-2 ml-4 text-sky-200 animate-pulse">
@@ -312,15 +481,34 @@ export const PolicyConsole: React.FC<PolicyConsoleProps> = ({
           <div
             onMouseEnter={handleUserAction}
             onClick={handleUserAction}
-            className="pointer-events-auto h-full w-80 shrink-0 hidden lg:block"
+            className="pointer-events-auto h-full max-h-full w-80 shrink-0 hidden xl:block"
           >
             <RightPanel
               canManageCorpus={canManageCorpus}
               isPlatformOwner={isPlatformOwner}
+              selectedProjects={selectedProjects}
+              projectDocuments={projectDocuments}
+              projectMessages={projectMessages}
             />
           </div>
         </div>
       </div>
+
+      {showHelp && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 pointer-events-auto">
+          <div className="glass-panel w-[min(420px,calc(100vw-32px))] rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-display font-bold uppercase tracking-widest text-white">Keyboard Help</h2>
+              <button type="button" onClick={() => setShowHelp(false)} className="text-gray-400 hover:text-white">Close</button>
+            </div>
+            <div className="space-y-2 text-sm text-gray-300">
+              <div className="flex justify-between gap-4"><span>Send message</span><span className="text-sky-200">Ctrl+Enter</span></div>
+              <div className="flex justify-between gap-4"><span>Clear chat</span><span className="text-sky-200">Ctrl+K</span></div>
+              <div className="flex justify-between gap-4"><span>Toggle help</span><span className="text-sky-200">Ctrl+/</span></div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

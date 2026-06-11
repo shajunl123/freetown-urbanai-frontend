@@ -10,7 +10,7 @@ import {
 } from './documentRegistry.js';
 import { chunkText } from './chunkingService.js';
 import { extractTextFromFile } from './textExtractionService.js';
-import { rebuildVocabulary } from './embeddingService.js';
+import { indexDocumentEmbeddings } from './embeddingService.js';
 import type { ChunkRow, DocumentRow, DocumentTextRow } from '../types.js';
 
 export interface IngestionResult {
@@ -35,14 +35,13 @@ export async function ingestDocument(documentId: string): Promise<IngestionResul
     );
     const text = storeDocumentText(documentId, extracted.content);
     updateDocumentIngestionStatus(documentId, 'chunking');
-    const chunks = replaceDocumentChunks(documentId, chunkText(extracted.content));
+    replaceDocumentChunks(documentId, chunkText(extracted.content));
+    const chunks = await indexDocumentEmbeddings(documentId);
 
-    // Rebuild TF-IDF vocabulary with new chunks
     try {
-      rebuildVocabulary();
-      console.log(`[ingestion] TF-IDF vocabulary rebuilt after ingesting document ${documentId}`);
-    } catch (vocabErr) {
-      console.warn(`[ingestion] Vocabulary rebuild failed (non-fatal):`, vocabErr);
+      console.log(`[ingestion] Search index updated after ingesting document ${documentId}`);
+    } catch (indexErr) {
+      console.warn(`[ingestion] Search index update failed (non-fatal):`, indexErr);
     }
 
     const updated = getDocument(documentId);

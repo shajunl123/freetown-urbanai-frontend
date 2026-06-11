@@ -67,6 +67,7 @@ export async function invokeOpenAICompatibleProvider(
     body: JSON.stringify({
       model: config.model,
       temperature: 0.2,
+      max_tokens: config.maxTokens ?? 800,
       messages: [
         { role: 'system', content: buildSystemPrompt() },
         { role: 'user', content: buildUserPrompt(request) },
@@ -82,7 +83,7 @@ export async function invokeOpenAICompatibleProvider(
 
   if (!bodyText.trim()) {
     return {
-      providerType: 'openai_compatible',
+      providerType: config.type,
       model: config.model,
       raw: null,
     };
@@ -101,7 +102,7 @@ export async function invokeOpenAICompatibleProvider(
   const raw = extractMessageContent(choice?.message?.content);
 
   return {
-    providerType: 'openai_compatible',
+    providerType: config.type,
     model: config.model,
     raw: raw || bodyText,
   };

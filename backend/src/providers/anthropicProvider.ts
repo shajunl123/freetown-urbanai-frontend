@@ -63,7 +63,7 @@ export async function invokeAnthropicProvider(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: 800,
+      max_tokens: config.maxTokens ?? 800,
       system: buildSystemPrompt(),
       messages: [{ role: 'user', content: buildUserPrompt(request) }],
     }),

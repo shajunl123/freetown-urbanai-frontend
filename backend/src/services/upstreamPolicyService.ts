@@ -2,6 +2,8 @@ import { invokeAnthropicProvider } from '../providers/anthropicProvider.js';
 import { describeProviderConfig, resolveProviderConfig } from '../providers/config.js';
 import { invokeLegacyN8nProvider } from '../providers/legacyN8nProvider.js';
 import { invokeOpenAICompatibleProvider } from '../providers/openaiCompatibleProvider.js';
+import { logRequest } from './requestLogger.js';
+import { securitySettings } from './securityConfig.js';
 import type {
   ProviderOutput,
   ProviderRequest,
@@ -186,6 +188,7 @@ async function invokeConfiguredProvider(
     case 'none':
       return null;
     case 'openai_compatible':
+    case 'nvidia':
       if (!config.model || !config.apiKey) return null;
       return invokeOpenAICompatibleProvider(config, request);
     case 'anthropic':
@@ -196,6 +199,36 @@ async function invokeConfiguredProvider(
     default:
       return null;
   }
+}
+
+async function invokeConfiguredProviderWithRetry(
+  request: ProviderRequest
+): Promise<ProviderOutput | null> {
+  const attempts = Math.max(1, securitySettings().providerRetryCount);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await invokeConfiguredProvider(request);
+    } catch (error) {
+      lastError = error;
+      logRequest({
+        sessionId: request.sessionId,
+        action: 'model_error',
+        mode: request.mode,
+        query: request.prompt,
+        responseJson: JSON.stringify({
+          attempt,
+          message: error instanceof Error ? error.message : 'Provider request failed.',
+        }),
+      });
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Provider request failed.');
 }
 
 export async function getPolicyAnswerFromUpstream(
@@ -209,7 +242,7 @@ export async function getPolicyAnswerFromUpstream(
 
   let providerOutput: ProviderOutput | null;
   try {
-    providerOutput = await invokeConfiguredProvider(request);
+    providerOutput = await invokeConfiguredProviderWithRetry(request);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Provider request failed.';

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AuthGate } from './components/AuthGate';
 import { PolicyConsole } from './components/PolicyConsole';
+import { AdminCommandCenter } from './components/AdminCommandCenter';
 import {
   fetchCurrentUser,
   loginPolicyUser,
@@ -15,6 +16,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoginSubmitting, setIsLoginSubmitting] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const loadCurrentUser = useCallback(async () => {
     setAuthState('checking');
@@ -77,7 +79,35 @@ const App: React.FC = () => {
     );
   }
 
-  return <PolicyConsole currentUser={currentUser} onLogout={handleLogout} />;
+  if (showAdmin && currentUser.role === 'admin') {
+    return (
+      <div className="h-screen w-full bg-black flex flex-col">
+        <div className="h-12 px-4 flex items-center justify-between border-b border-white/10 bg-slate-950/50">
+          <button
+            onClick={() => setShowAdmin(false)}
+            className="text-xs text-gray-400 hover:text-white flex items-center gap-2"
+          >
+            <span>←</span>
+            <span>Back to Policy Console</span>
+          </button>
+          <span className="text-[10px] text-amber-200 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20">
+            Admin Mode
+          </span>
+        </div>
+        <div className="flex-1 p-4 overflow-hidden">
+          <AdminCommandCenter currentUser={currentUser} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <PolicyConsole
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onOpenAdmin={currentUser.role === 'admin' ? () => setShowAdmin(true) : undefined}
+    />
+  );
 };
 
 export default App;

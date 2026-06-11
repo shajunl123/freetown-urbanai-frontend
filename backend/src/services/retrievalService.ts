@@ -229,9 +229,10 @@ export async function retrieveEvidenceHybrid(
   let vectorResults: RetrievalResult[] = [];
   if (isEmbeddingReady()) {
     try {
-      const rawVectorResults = vectorSearch(query, {
+      const rawVectorResults = await vectorSearch(query, {
         approvalStatuses: approvalStatuses as string[],
         sensitivityLevels,
+        documentIds,
         limit: limit * 3,
       });
 
@@ -247,11 +248,12 @@ export async function retrieveEvidenceHybrid(
         approvalStatus: vr.approvalStatus,
         sensitivityLevel: vr.sensitivityLevel,
         snippet: snippetFor(vr.content, terms),
-        score: -vr.score, // Negate so lower = better (matches FTS5 convention)
-        rankReason: `tfidf=${vr.score.toFixed(3)}`,
+        score: -vr.score,
+        rankReason: vr.rankReason,
       }));
     } catch (err) {
-      console.warn('[retrieval] Vector search failed, falling back to FTS5 only:', err);
+      const message = err instanceof Error ? err.message : 'unknown error';
+      console.warn(`[retrieval] Vector search failed, falling back to FTS5 only: ${message}`);
     }
   }
 
@@ -267,15 +269,13 @@ export async function retrieveEvidenceHybrid(
   for (const vr of vectorResults) {
     const existing = allResults.get(vr.chunkId);
     if (existing) {
-      // Both found this chunk — combine scores
-      // FTS5 score: negative, typically -10 to 0 (lower = better)
-      // Vector score: negative, typically -1 to 0 (lower = better)
-      // Normalize both to 0-1 range and combine
-      const ftsNorm = 1 / (1 + Math.abs(existing.score));
-      const vecNorm = 1 / (1 + Math.abs(vr.score));
-      const combined = 0.4 * ftsNorm + 0.6 * vecNorm;
+      // Convert both signals into higher-is-better weights, then negate for sort order.
+      const ftsMagnitude = Math.abs(existing.score);
+      const ftsNorm = ftsMagnitude / (ftsMagnitude + 1);
+      const vecNorm = Math.max(0, -vr.score);
+      const combined = 0.45 * ftsNorm + 0.55 * vecNorm;
       existing.score = -combined;
-      existing.rankReason = `${existing.rankReason} + tfidf=${(-vr.score).toFixed(3)} → hybrid`;
+      existing.rankReason = `${existing.rankReason} + ${vr.rankReason} -> hybrid`;
     } else {
       // Only vector found this chunk
       allResults.set(vr.chunkId, vr);

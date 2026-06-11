@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createReadStream } from 'node:fs';
 import multer from 'multer';
 import { ensureDir, UPLOAD_DIR } from '../paths.js';
 import {
@@ -8,6 +9,7 @@ import {
   getDocumentText,
   listDocumentChunks,
   listDocuments,
+  softDeleteDocument,
   updateDocumentApproval,
   updateDocumentMetadata,
 } from '../services/documentRegistry.js';
@@ -18,6 +20,7 @@ import {
 } from '../services/corpusIngestionService.js';
 import { isSupportedForLocalExtraction } from '../services/textExtractionService.js';
 import { requireCorpusOperator } from '../middleware/auth.js';
+import { logAuditEvent } from '../services/auditService.js';
 
 ensureDir(UPLOAD_DIR);
 
@@ -56,6 +59,10 @@ function serializeDocument(d: ReturnType<typeof listDocuments>[number]) {
     ingestionStatus: d.ingestion_status,
     approvalStatus: d.approval_status,
     sensitivityLevel: d.sensitivity_level,
+    retentionExpiresAt: d.retention_expires_at,
+    retentionAction: d.retention_action,
+    archivedAt: d.archived_at,
+    deletedAt: d.deleted_at,
     uploadedAt: d.created_at,
     updatedAt: d.updated_at,
     ingestedAt: d.ingested_at,
@@ -64,8 +71,12 @@ function serializeDocument(d: ReturnType<typeof listDocuments>[number]) {
   };
 }
 
-router.get('/', (_req, res) => {
-  res.json(listDocuments().map(serializeDocument));
+function canViewDocument(req: any, doc: ReturnType<typeof listDocuments>[number]): boolean {
+  return req.user?.role === 'admin' || doc.sensitivity_level !== 'confidential';
+}
+
+router.get('/', (req, res) => {
+  res.json(listDocuments().filter((doc) => canViewDocument(req, doc)).map(serializeDocument));
 });
 
 router.get('/stats', (_req, res) => {
@@ -104,6 +115,16 @@ router.post('/', requireCorpusOperator, (req, res) => {
     uploadedBy: typeof uploadedBy === 'string' ? uploadedBy : undefined,
   });
 
+  logAuditEvent({
+    userId: req.user?.id,
+    action: 'document_create',
+    resourceType: 'document',
+    resourceId: doc.id,
+    ipAddress: req.ip,
+    success: true,
+    details: { sensitivity: doc.sensitivity_level, approval: doc.approval_status },
+  });
+
   res.status(201).json(serializeDocument(doc));
 });
 
@@ -127,6 +148,20 @@ router.post('/upload', requireCorpusOperator, upload.single('file'), (req, res) 
       approval: req.body?.approval === 'approved' ? 'approved' : 'draft',
     });
 
+    logAuditEvent({
+      userId: req.user?.id,
+      action: 'document_upload',
+      resourceType: 'document',
+      resourceId: doc.id,
+      ipAddress: req.ip,
+      success: true,
+      details: {
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sensitivity: doc.sensitivity_level,
+      },
+    });
+
     res.status(201).json({
       ...serializeDocument(doc),
       canIngest: isSupportedForLocalExtraction(file.originalname),
@@ -134,6 +169,15 @@ router.post('/upload', requireCorpusOperator, upload.single('file'), (req, res) 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed';
     console.error('[documents] upload error:', message);
+    logAuditEvent({
+      userId: req.user?.id,
+      action: 'document_upload',
+      resourceType: 'document',
+      ipAddress: req.ip,
+      success: false,
+      severity: 'error',
+      details: { message },
+    });
     res.status(500).json({ error: message });
   }
 });
@@ -176,6 +220,10 @@ router.get('/:id', (req, res) => {
     res.status(404).json({ error: 'Document not found' });
     return;
   }
+  if (!canViewDocument(req, doc)) {
+    res.status(403).json({ error: 'Confidential documents require admin access' });
+    return;
+  }
 
   const preview = getIngestionPreview(documentId);
   res.json({
@@ -188,6 +236,45 @@ router.get('/:id', (req, res) => {
       : null,
     chunkPreviewCount: preview.chunks.length,
   });
+});
+
+router.get('/:id/preview', (req, res) => {
+  const documentId = paramId(req.params.id);
+  const doc = getDocument(documentId);
+  if (!doc) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+  if (!canViewDocument(req, doc)) {
+    res.status(403).json({ error: 'Confidential documents require admin access' });
+    return;
+  }
+
+  const text = getDocumentText(documentId);
+  const isPdf = doc.mime_type === 'application/pdf' || Boolean(doc.file_name?.toLowerCase().endsWith('.pdf'));
+  res.json({
+    document: serializeDocument(doc),
+    preview: text?.content ? text.content.slice(0, 500) : '',
+    canPreviewPdf: isPdf,
+    pdfUrl: isPdf ? `/api/documents/${doc.id}/file` : null,
+  });
+});
+
+router.get('/:id/file', (req, res) => {
+  const documentId = paramId(req.params.id);
+  const doc = getDocument(documentId);
+  if (!doc?.file_path) {
+    res.status(404).json({ error: 'Document file not found' });
+    return;
+  }
+  if (!canViewDocument(req, doc)) {
+    res.status(403).json({ error: 'Confidential documents require admin access' });
+    return;
+  }
+
+  res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${doc.file_name || doc.title}"`);
+  createReadStream(doc.file_path).pipe(res);
 });
 
 router.patch('/:id', requireCorpusOperator, (req, res) => {
@@ -211,7 +298,36 @@ router.patch('/:id', requireCorpusOperator, (req, res) => {
     return;
   }
 
+  logAuditEvent({
+    userId: req.user?.id,
+    action: 'document_permission_change',
+    resourceType: 'document',
+    resourceId: documentId,
+    ipAddress: req.ip,
+    success: true,
+    details: { approval, sensitivity },
+  });
+
   res.json(serializeDocument(getDocument(documentId)!));
+});
+
+router.delete('/:id', requireCorpusOperator, (req, res) => {
+  const documentId = paramId(req.params.id);
+  const updated = softDeleteDocument(documentId);
+  logAuditEvent({
+    userId: req.user?.id,
+    action: 'document_delete',
+    resourceType: 'document',
+    resourceId: documentId,
+    ipAddress: req.ip,
+    success: updated,
+    severity: updated ? 'warning' : 'error',
+  });
+  if (!updated) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+  res.json({ id: documentId, deleted: true });
 });
 
 router.post('/:id/ingest', requireCorpusOperator, async (req, res) => {
@@ -254,6 +370,10 @@ router.get('/:id/chunks', requireCorpusOperator, (req, res) => {
     res.status(404).json({ error: 'Document not found' });
     return;
   }
+  if (!canViewDocument(req, doc)) {
+    res.status(403).json({ error: 'Confidential documents require admin access' });
+    return;
+  }
 
   const text = getDocumentText(documentId);
   res.json({
@@ -292,6 +412,16 @@ router.patch('/:id/approval', requireCorpusOperator, (req, res) => {
     res.status(404).json({ error: 'Document not found' });
     return;
   }
+
+  logAuditEvent({
+    userId: req.user?.id,
+    action: 'document_permission_change',
+    resourceType: 'document',
+    resourceId: documentId,
+    ipAddress: req.ip,
+    success: true,
+    details: { approval },
+  });
 
   res.json({ id: documentId, approval });
 });

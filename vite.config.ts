@@ -9,5 +9,13 @@ export default defineConfig({
   base: isGithubPages ? '/freetown-urbanai-frontend/' : '/',
   build: {
     outDir: isGithubPages ? 'docs' : 'dist'
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      }
+    }
   }
 })

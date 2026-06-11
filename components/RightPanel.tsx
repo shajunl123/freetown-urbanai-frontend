@@ -1,13 +1,21 @@
 import React from 'react';
+import { AdminSecurityPanel } from './AdminSecurityPanel';
+import { EvidenceDocument, Message, PortfolioProject } from '../types';
 
 interface RightPanelProps {
   canManageCorpus?: boolean;
   isPlatformOwner?: boolean;
+  selectedProjects?: PortfolioProject[];
+  projectDocuments?: EvidenceDocument[];
+  projectMessages?: Message[];
 }
 
 export const RightPanel: React.FC<RightPanelProps> = ({
   canManageCorpus = false,
   isPlatformOwner = false,
+  selectedProjects = [],
+  projectDocuments = [],
+  projectMessages = [],
 }) => {
   const useCases = [
     { label: 'Briefing Support', value: 'Mayor / Chief of Staff' },
@@ -26,9 +34,124 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       : 'Admin and debug controls are not shown in normal briefing use',
     'Outputs require human review before external use',
   ];
+  const primaryProject = selectedProjects[0];
+
+  const statusStyle = {
+    on_track: 'text-emerald-200 border-emerald-300/25 bg-emerald-400/10',
+    delayed: 'text-amber-200 border-amber-300/25 bg-amber-400/10',
+    at_risk: 'text-red-200 border-red-300/25 bg-red-400/10',
+  };
+
+  const statusLabel = {
+    on_track: 'On track',
+    delayed: 'Delayed',
+    at_risk: 'At risk',
+  };
 
   return (
-    <div className="hidden lg:flex flex-col w-72 gap-4 h-full pointer-events-auto">
+    <div className="flex flex-col w-full gap-4 h-full max-h-screen overflow-y-auto pr-1 pointer-events-auto">
+      {primaryProject && (
+        <div className="glass-panel rounded-xl p-4 backdrop-blur-sm hover:border-white/20 transition-colors">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-xs font-display font-bold uppercase text-sky-200 tracking-widest">Project Detail</h3>
+              <p className="mt-1 text-sm text-white font-medium">{primaryProject.displayName}</p>
+            </div>
+            <span className={`shrink-0 rounded border px-2 py-1 text-[10px] ${statusStyle[primaryProject.status]}`}>
+              {statusLabel[primaryProject.status]}
+            </span>
+          </div>
+
+          <p className="text-xs text-gray-300 leading-relaxed">{primaryProject.overview}</p>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded border border-white/10 bg-black/10 p-2">
+              <p className="text-[9px] uppercase tracking-widest text-gray-500">Progress</p>
+              <p className="text-lg text-white font-display">{primaryProject.progress}%</p>
+            </div>
+            <div className="rounded border border-white/10 bg-black/10 p-2">
+              <p className="text-[9px] uppercase tracking-widest text-gray-500">Risk</p>
+              <p className="text-lg text-white font-display capitalize">{primaryProject.riskLevel}</p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Key indicators</p>
+            <div className="space-y-2">
+              {primaryProject.keyMetrics.map((metric) => (
+                <div key={metric} className="flex items-start gap-2 text-xs text-gray-300">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-sky-200 shrink-0" />
+                  <span>{metric}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Related documents</p>
+            <div className="space-y-2">
+              {projectDocuments.slice(0, 4).map((doc) => (
+                <div key={doc.id} className="rounded border border-white/5 bg-black/10 p-2">
+                  <p className="text-xs text-gray-200 truncate">{doc.title}</p>
+                  <p className="text-[10px] text-gray-500">
+                    {doc.ingestionStatus || 'registered'} • {doc.chunkCount ?? 0} chunks
+                  </p>
+                </div>
+              ))}
+              {projectDocuments.length === 0 && (
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  No linked documents yet. Retrieval will use project context until portfolio evidence is linked.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Recent project chat</p>
+            <div className="space-y-2">
+              {projectMessages.length > 0 ? projectMessages.map((message) => (
+                <div key={message.id} className="rounded border border-white/5 bg-black/10 p-2">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-500">{message.role}</p>
+                  <p className="text-xs text-gray-300 line-clamp-2">{message.text}</p>
+                </div>
+              )) : (
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  No project-specific chat yet in this session.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedProjects.length > 1 && (
+        <div className="glass-panel rounded-xl p-4 backdrop-blur-sm hover:border-white/20 transition-colors">
+          <h3 className="text-xs font-display font-bold uppercase text-gray-400 tracking-widest mb-3">
+            Project Comparison
+          </h3>
+          <div className="space-y-2">
+            {selectedProjects.map((project) => (
+              <div key={project.id} className="rounded border border-white/10 bg-black/10 p-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-white font-medium truncate">{project.name}</p>
+                  <span className={`rounded border px-1.5 py-0.5 text-[9px] ${statusStyle[project.status]}`}>
+                    {statusLabel[project.status]}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-sky-300/70"
+                    style={{ width: `${Math.max(5, Math.min(project.progress, 100))}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-gray-500">
+                  {project.progress}% progress • {project.riskLevel} risk
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Project Stats - Transparent */}
       <div className="glass-panel rounded-xl p-4 backdrop-blur-sm hover:border-white/20 transition-colors">
@@ -77,6 +200,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             )}
         </div>
       </div>
+
+      {isPlatformOwner && <AdminSecurityPanel />}
     </div>
   );
 };

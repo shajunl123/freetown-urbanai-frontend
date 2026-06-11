@@ -20,6 +20,9 @@ export const DB_PATH = resolveFromProjectRoot(
 export const UPLOAD_DIR = resolveFromProjectRoot(
   process.env.UPLOAD_DIR || 'data/uploads'
 );
+export const SECURITY_REPORT_DIR = resolveFromProjectRoot(
+  process.env.SECURITY_REPORT_DIR || 'data/security-reports'
+);
 
 export function ensureParentDir(pathValue: string): void {
   mkdirSync(dirname(pathValue), { recursive: true });

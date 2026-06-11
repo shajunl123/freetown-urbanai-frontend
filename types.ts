@@ -74,6 +74,28 @@ export interface EvidenceDocument {
   ingestedAt?: string | null;
   indexedAt?: string | null;
   lastError?: string | null;
+  preview?: string;
+  canPreviewPdf?: boolean;
+  pdfUrl?: string | null;
+}
+
+export type ProjectStatus = 'on_track' | 'delayed' | 'at_risk';
+export type ProjectRiskLevel = 'low' | 'medium' | 'high';
+
+export interface PortfolioProject {
+  id: string;
+  slug: string;
+  name: string;
+  displayName: string;
+  status: ProjectStatus;
+  riskLevel: ProjectRiskLevel;
+  progress: number;
+  overview: string;
+  keyMetrics: string[];
+  keywords: string[];
+  documentCount: number;
+  createdAt: string;
+  updatedAt?: string | null;
 }
 
 export interface CorpusStats {
@@ -133,4 +155,32 @@ export interface UploadedDoc {
   approval?: string;
   ingestionStatus?: string;
   source?: 'backend' | 'static' | 'local';
+  preview?: string;
+  canPreviewPdf?: boolean;
+  pdfObjectUrl?: string;
+}
+
+export interface ApiUsageStatus {
+  status: 'green' | 'yellow' | 'red';
+  provider: {
+    type: string;
+    configured: boolean;
+    model?: string;
+    baseUrl?: string;
+    missing?: string[];
+  };
+  todayQueries: number;
+  todayTokenUsage: number;
+  avgLatencyMs: number;
+  errorRate: number;
+  recentErrors: Array<Record<string, unknown>>;
+}
+
+export interface SecurityDashboard {
+  activeSessions: number;
+  todayQueries: number;
+  suspiciousActivity: number;
+  modelErrorRate: number;
+  classifications: Array<{ level: string; count: number }>;
+  auditSummary: Array<Record<string, unknown>>;
 }

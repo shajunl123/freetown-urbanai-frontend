@@ -14,6 +14,7 @@ Frontend
 Supported provider types in the current backend are:
 
 - `openai_compatible`
+- `nvidia`
 - `anthropic`
 - `legacy_n8n` as an explicit transition-only fallback
 - `none` for retrieval-only operation without model synthesis
@@ -43,6 +44,44 @@ The current configuration model is explicit rather than magical:
 - `LEGACY_N8N_CHAT_WEBHOOK_URL` only when legacy webhook bridging is intentionally retained
 
 This means the backend can now call OpenAI-compatible endpoints directly, including OpenAI itself and Alibaba DashScope / Qwen-style OpenAI-compatible APIs, while also supporting a separate native Anthropic/Claude path.
+
+## Phase 8 Checkpoint: Provider-Agnostic Embeddings And Optional Supabase Vector Retrieval
+
+The retrieval path is now still local-first, but no longer locked to local TF-IDF.
+
+Embedding provider selection is isolated behind `backend/src/services/embeddingProviders.ts` and `backend/src/services/embeddingService.ts`:
+
+- `EMBEDDING_PROVIDER=nvidia` defaults to `https://integrate.api.nvidia.com/v1` and `nvidia/nv-embedqa-mistral-7b-v2`.
+- `EMBEDDING_PROVIDER=mistral` defaults to `https://api.mistral.ai/v1` and `mistral-embed`.
+- `EMBEDDING_PROVIDER=local` keeps the deterministic TF-IDF fallback.
+
+The backend stores dense embeddings in SQLite chunk rows as a local cache and mirrors embedded chunks to Supabase when `SUPABASE_URL` and a Supabase key are configured. Supabase is an enhancement layer, not a hard runtime dependency. The schema and pgvector RPC live in `backend/supabase/schema.sql`.
+
+Hybrid retrieval now runs:
+
+```text
+query
+  -> SQLite FTS5 keyword retrieval
+  -> provider embedding for vector query when configured
+  -> Supabase match_chunks pgvector RPC when available
+  -> local TF-IDF fallback when external vector retrieval is unavailable
+  -> merged score and existing source contract
+```
+
+Chunking is now structure-aware. It preserves Markdown headings as section metadata, groups paragraphs, keeps table-like rows together, and targets 800-1500 character chunks with about 200 characters of overlap. PDF extraction now restores page rows by y coordinate and preserves x-ordered fragments with spacing, which gives table rows enough shape for row-level chunking.
+
+## Phase 9 Checkpoint: Opt-In Security Controls And Admin API Governance
+
+Security hardening is now implemented as opt-in local controls so the pilot remains runnable without enterprise infrastructure:
+
+- AES-256-GCM encryption for stored extracted document text when `ENABLE_DOCUMENT_ENCRYPTION=true` and `DOCUMENT_ENCRYPTION_KEY` is set.
+- Append-only `audit_log` table with admin retrieval at `/api/admin/audit-log`.
+- Login lockout, session inactivity timeout, and per-user hourly chat rate limit behind environment flags.
+- Prompt-injection inspection, configurable content blacklist, model retry logging, and output validation behind environment flags.
+- Confidential document classification is enforced in document routes and retrieval filters: non-admin users see only public/internal evidence.
+- Admin-only security dashboard, API usage status, provider configuration, provider test, retention run, and security report generation routes live under `/api/admin`.
+
+Provider configuration can now be read from encrypted database rows in `api_provider_configs`. Active DB configuration takes precedence over environment provider settings and is hot-reloaded on the next model request. API keys saved through the admin panel require `API_CONFIG_ENCRYPTION_KEY` and are returned to the frontend only as masked values.
 
 ## Phase 6 Checkpoint: Minimum Governance And Access Layer
 

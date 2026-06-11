@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import type { SessionRow, MessageRow } from '../types.js';
+import { syncMessageToSupabase, syncSessionToSupabase } from './supabaseService.js';
 
 export function ensureSession(sessionId: string, userId: string): SessionRow {
   const existing = db
@@ -18,15 +19,21 @@ export function ensureSession(sessionId: string, userId: string): SessionRow {
       db.prepare('UPDATE sessions SET user_id = ? WHERE id = ?').run(userId, sessionId);
     }
 
-    return existing;
+    const session = db
+      .prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as SessionRow;
+    void syncSessionToSupabase(session);
+    return session;
   }
 
   const createdAt = new Date().toISOString();
   db.prepare('INSERT INTO sessions (id, user_id, created_at, last_active) VALUES (?, ?, ?, ?)')
     .run(sessionId, userId, createdAt, createdAt);
-  return db
+  const session = db
     .prepare('SELECT * FROM sessions WHERE id = ?')
     .get(sessionId) as SessionRow;
+  void syncSessionToSupabase(session);
+  return session;
 }
 
 export function saveMessage(
@@ -64,7 +71,9 @@ export function saveMessage(
     nextOrder
   );
 
-  return db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow;
+  const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow;
+  void syncMessageToSupabase(message);
+  return message;
 }
 
 export function getSessionHistory(sessionId: string): MessageRow[] {
